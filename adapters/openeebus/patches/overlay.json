@@ -1,0 +1,8 @@
+{
+  "upstream/CMakeLists.txt": "eaf928dd4677877d0eda6f5573ead94a7802b599ee9d5f73ab2456d94bd9caeb",
+  "upstream/examples/heat_pump/cs_lpc_listener.c": "edfa06d565c8aa7336e02b077cb2847be452cc84858f4e79642e408995b3be9a",
+  "upstream/examples/heat_pump/cs_lpp_listener.c": "13798eed34d0df4b49c0f8bc43158ced4d486ffd4df99957fb8a9022034c2c27",
+  "upstream/examples/heat_pump/hpsrv.c": "08827cca54a8d63ee08a585de0fcbea029740c11e1c4e5c466cf50369558b6ee",
+  "upstream/examples/hems/hems.c": "d5c9a3b6fde2764bfa6776660918a2f2679263807c9e246f889ccaa62099ce20",
+  "upstream/src/spine/heartbeat/heartbeat_manager.c": "3d13dd204c4f55e2a05517aaa005040ee5d9749db5ee4007038028f8e0f99c4d"
+}

@@ -1,0 +1,9 @@
+.arena/
+web/node_modules/
+web/dist/
+internal/webui/dist/
+__pycache__/
+*.pyc
+tmp/
+bin/
+docs/media/

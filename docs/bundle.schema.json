@@ -1,0 +1,873 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EEBUS arena setup bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "enum": [
+        1,
+        2,
+        3
+      ]
+    },
+    "definition": {
+      "$ref": "#/$defs/definition"
+    },
+    "identities": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/identity"
+      }
+    },
+    "variants": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/variant"
+      }
+    },
+    "pairing": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "shipId": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[A-F0-9]{64}$"
+          },
+          "secret": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{32}$"
+          }
+        },
+        "required": [
+          "shipId",
+          "fingerprint"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "definition"
+  ],
+  "$defs": {
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        },
+        "variant": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        },
+        "role": {
+          "enum": [
+            "EG",
+            "CS",
+            "STRESSER"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "memoryMB": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 8192
+        },
+        "stress": {
+          "$ref": "#/$defs/stressProfile"
+        },
+        "resources": {
+          "$ref": "#/$defs/resourceLimits"
+        },
+        "external": {
+          "$ref": "#/$defs/externalNode"
+        },
+        "monitoring": {
+          "enum": [
+            "none",
+            "mpc",
+            "mgcp"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "variant",
+        "role",
+        "count"
+      ]
+    },
+    "link": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        },
+        "mode": {
+          "enum": [
+            "pretrusted",
+            "ship-pairing"
+          ]
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "expectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "type": "string"
+          }
+        },
+        "equals": {},
+        "withinSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "event": {
+          "type": "string",
+          "minLength": 1
+        },
+        "match": {
+          "type": "object"
+        },
+        "absent": {
+          "type": "boolean"
+        },
+        "realTime": {
+          "type": "boolean"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "withinSeconds"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "path",
+            "equals"
+          ],
+          "not": {
+            "required": [
+              "event"
+            ]
+          }
+        },
+        {
+          "required": [
+            "event"
+          ],
+          "not": {
+            "required": [
+              "path"
+            ]
+          }
+        }
+      ]
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "target": {
+          "type": "string"
+        },
+        "action": {
+          "enum": [
+            "wait",
+            "command",
+            "lifecycle",
+            "assert",
+            "fault",
+            "resource"
+          ]
+        },
+        "command": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "params": {
+          "type": "object"
+        },
+        "seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "expect": {
+          "$ref": "#/$defs/expectation"
+        },
+        "fault": {
+          "$ref": "#/$defs/networkFault"
+        },
+        "resource": {
+          "$ref": "#/$defs/resourceExpectation"
+        }
+      },
+      "required": [
+        "name",
+        "action"
+      ]
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ski": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "certificate": {
+          "type": "string"
+        },
+        "privateKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ski",
+        "certificate",
+        "privateKey"
+      ]
+    },
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        },
+        "builtAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "stack": {
+          "enum": [
+            "enbility",
+            "openeebus",
+            "jeebus",
+            "mdns-stresser"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "roles": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "EG",
+              "CS",
+              "STRESSER"
+            ]
+          }
+        },
+        "image": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "provenance": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "stack",
+        "label",
+        "roles",
+        "image",
+        "provenance"
+      ]
+    },
+    "definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "enum": [
+            1,
+            2,
+            3
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        "timeScale": {
+          "enum": [
+            1,
+            2,
+            5,
+            10
+          ]
+        },
+        "scenario": {
+          "enum": [
+            "manual",
+            "discovery",
+            "lpc",
+            "lpp",
+            "heartbeat",
+            "restart",
+            "stress",
+            "custom",
+            "pairing",
+            "mdns-stress",
+            "campaign",
+            "explore",
+            "monitoring"
+          ]
+        },
+        "durationSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "groups": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 201,
+          "items": {
+            "$ref": "#/$defs/group"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        },
+        "steps": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "$ref": "#/$defs/step"
+          }
+        },
+        "timingProfile": {
+          "enum": [
+            "qualified",
+            "legacy-partial"
+          ]
+        },
+        "nodeOverrides": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,47}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "resources": {
+                "$ref": "#/$defs/resourceLimits"
+              },
+              "monitoring": {
+                "enum": [
+                  "none",
+                  "mpc",
+                  "mgcp"
+                ]
+              }
+            },
+            "required": [
+              "resources"
+            ]
+          }
+        },
+        "sampling": {
+          "$ref": "#/$defs/sampling"
+        },
+        "campaign": {
+          "$ref": "#/$defs/campaign"
+        },
+        "network": {
+          "$ref": "#/$defs/labNetwork"
+        },
+        "exploration": {
+          "$ref": "#/$defs/exploration"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "name",
+        "groups"
+      ]
+    },
+    "stressProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "pattern": {
+          "enum": [
+            "advertise",
+            "query",
+            "churn",
+            "goodbye",
+            "stale",
+            "duplicate",
+            "invalid",
+            "replay"
+          ]
+        },
+        "service": {
+          "enum": [
+            "_ship._tcp",
+            "_shippairing._tcp",
+            "_http._tcp"
+          ]
+        },
+        "forId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "forPar": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "replayId": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "services": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "burst": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "churn": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "ttl": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
+        },
+        "durationSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "family": {
+          "enum": [
+            "",
+            "ipv4",
+            "ipv6",
+            "dual-stack"
+          ]
+        }
+      },
+      "required": [
+        "version",
+        "seed",
+        "services",
+        "rate",
+        "burst",
+        "churn",
+        "ttl",
+        "durationSeconds",
+        "pattern",
+        "service"
+      ]
+    },
+    "resourceLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpuMillis": {
+          "oneOf": [
+            {
+              "const": 0
+            },
+            {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 256000
+            }
+          ]
+        },
+        "memoryMiB": {
+          "oneOf": [
+            {
+              "const": 0
+            },
+            {
+              "type": "integer",
+              "minimum": 16,
+              "maximum": 1048576
+            }
+          ]
+        },
+        "pidsLimit": {
+          "oneOf": [
+            {
+              "const": 0
+            },
+            {
+              "type": "integer",
+              "minimum": 16,
+              "maximum": 65536
+            }
+          ]
+        }
+      }
+    },
+    "sampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "intervalMillis": {
+          "enum": [
+            1000,
+            2000,
+            5000
+          ]
+        },
+        "diagnosticNodes": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,47}$"
+          }
+        }
+      },
+      "required": [
+        "intervalMillis"
+      ]
+    },
+    "campaign": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lanes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/campaignLane"
+          }
+        }
+      },
+      "required": [
+        "lanes"
+      ]
+    },
+    "campaignLane": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        },
+        "after": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,47}$"
+          }
+        },
+        "offsetSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
+        },
+        "domain": {
+          "enum": [
+            "real",
+            "protocol"
+          ]
+        },
+        "steps": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "$ref": "#/$defs/step"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "steps"
+      ]
+    },
+    "exploration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/step"
+          }
+        },
+        "invariants": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/step"
+          }
+        },
+        "settleSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        }
+      },
+      "required": [
+        "rounds",
+        "actions",
+        "settleSeconds"
+      ]
+    },
+    "labNetwork": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "interface": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subnet": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ipRange": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "enum": [
+            "ipv4",
+            "ipv6",
+            "dual-stack"
+          ]
+        },
+        "ipv6Subnet": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "ipv6Range": {
+          "type": "string",
+          "maxLength": 80
+        }
+      }
+    },
+    "externalNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "endpoint": {
+          "type": "string",
+          "format": "uri"
+        },
+        "tlsFingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "interface": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_.-]{1,15}$"
+        },
+        "address": {
+          "type": "string",
+          "format": "ipv4"
+        },
+        "ipv6Address": {
+          "type": "string",
+          "format": "ipv6"
+        }
+      },
+      "required": [
+        "label",
+        "endpoint",
+        "tlsFingerprint",
+        "token",
+        "interface"
+      ]
+    },
+    "networkFault": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        },
+        "traffic": {
+          "enum": [
+            "unicast",
+            "mdns"
+          ]
+        },
+        "delayMillis": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "jitterMillis": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "lossPercent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "rateKbit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "partition": {
+          "type": "boolean"
+        },
+        "durationSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600
+        },
+        "family": {
+          "enum": [
+            "ipv4",
+            "ipv6"
+          ]
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "traffic",
+        "durationSeconds"
+      ]
+    },
+    "resourceExpectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metric": {
+          "enum": [
+            "cpuPercent",
+            "rssBytes",
+            "workingSetBytes",
+            "memoryBytes",
+            "oomKills",
+            "cpuThrottledSeconds"
+          ]
+        },
+        "component": {
+          "type": "string"
+        },
+        "max": {
+          "type": "number",
+          "minimum": 0
+        },
+        "windowSeconds": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 600
+        },
+        "sustainedSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600
+        },
+        "growth": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "metric",
+        "max",
+        "windowSeconds"
+      ]
+    }
+  },
+  "description": "The controller additionally validates node totals and targets, trust and native prerequisites, lane DAGs, clock build qualification, fault bounds and ownership, physical-network compatibility, resource overrides, installed immutable variants and certificate validity. Faster factors are declared in the schema but current variants are qualified only at 1\u00d7."
+}

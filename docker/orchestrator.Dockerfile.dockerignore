@@ -1,0 +1,14 @@
+# Only controller and frontend compilation inputs.
+**
+!go.mod
+!cmd/**
+!internal/**
+internal/**/*_test.go
+cmd/**/*_test.go
+internal/webui/static/**
+!web/package.json
+!web/package-lock.json
+!web/tsconfig.json
+!web/vite.config.ts
+!web/index.html
+!web/src/**

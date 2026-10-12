@@ -1,0 +1,15 @@
+{
+  "eebus/features/internal/devicediagnosis.go": "edb1cf7068adfdd13d61435b26cfdee2b7d46fc635d7b61b29cdcd08630bc4b4",
+  "eebus/service/service.go": "e92e5267ef038c3fcc9aaea43f7fde20761d9cbcb6c6b347851ddcfdb6965a72",
+  "eebus/usecases/gcp/mgcp/usecase.go": "0e775c47ed6753e40c5fa785ef08a2783f2bb6aedf36cbd5ebb0c2a24a6dbee1",
+  "ship/api/arena_observer.go": null,
+  "ship/hub/addcu_replacement_tracker.go": "5507a6a58baee8a7b63be46c93db40080430f48a32917b85943bf8ff3f39eb2f",
+  "ship/hub/hub.go": "5d84b213e7d65f7d8b9239aa8121aaa7e51e351bb7f985f7de8636e4f131defd",
+  "ship/hub/hub_connections_client.go": "a2237f96bc082122125ef0937d65a4d0d4b7c82565fc6873e90b833fbc8cfef6",
+  "ship/hub/hub_connections_server.go": "a98c41b63120a37e71b7ba616f8c56086b3324c68d3052bed5d5b1db28afed31",
+  "ship/mdns/mdns.go": "fb6ab6daf5f3eb726f77f3bf0991753039a63e5a7d35c72ad24a20d58adcedab",
+  "ship/mdns/zeroconf.go": "a36d61f70971838e6274d75638b7ff6b887fee79988d2061292109131d30dcce",
+  "ship/pairing/listener.go": "78a346965ca6f615b6064aed8cfa2efa2857c3a172d721169fae612e1fc6262a",
+  "spine/spine/device_remote.go": "36746b64da3b0774bc383c0baec5bff9ff3bcfa7513595e3f64c92232fbe2058",
+  "spine/spine/heartbeat_manager.go": "8e157433e3f20cb9f1b9fe735d1b63d03337d65dbba6130e25905c1cf3ba2982"
+}

@@ -1,0 +1,6 @@
+apiVersion: 1
+providers:
+  - name: Arena
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

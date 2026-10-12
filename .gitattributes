@@ -1,0 +1,4 @@
+# Unified diffs require a leading space on context lines, including empty ones.
+# Preserve that patch syntax; native source formatting is checked separately.
+adapters/**/patches/*.patch -whitespace
+*.png filter=lfs diff=lfs merge=lfs -text

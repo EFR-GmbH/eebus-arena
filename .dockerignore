@@ -1,0 +1,3 @@
+# Each Dockerfile has an explicit sibling allowlist. An unspecified build
+# receives no repository files, including identities and cached artifacts.
+**

@@ -1,0 +1,350 @@
+Arena hooks for the pinned OpenEEBUS examples.
+
+WHY: disable implicit example monitoring providers so the configured provider is
+the only source of test measurements. Heartbeat controls share state with the
+native timer thread, hence the atomic fields and stop guard. Appended example
+hooks live separately in *_hooks.c.inc because they need private example structs.
+The pairing variant records native evaluation stages and restores persisted trust
+before starting the service; native acceptance and timeout decisions stay native.
+
+--- a/upstream/CMakeLists.txt
++++ b/upstream/CMakeLists.txt
+@@ -273,3 +273,11 @@
+     COMMENT "Running integration tests"
+   )
+ endif()
++
++file(GLOB ARENA_HEMS examples/hems/*.c)
++list(FILTER ARENA_HEMS EXCLUDE REGEX "/main.c$")
++file(GLOB ARENA_CS examples/heat_pump/*.c)
++list(FILTER ARENA_CS EXCLUDE REGEX "/main.c$")
++add_executable(arena-node arena/main.c arena/monitoring.c ${ARENA_HEMS} ${ARENA_CS})
++target_link_libraries(arena-node PRIVATE openeebus PkgConfig::CJSON pthread m)
++target_include_directories(arena-node PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/arena)
+--- a/upstream/examples/heat_pump/cs_lpc_listener.c
++++ b/upstream/examples/heat_pump/cs_lpc_listener.c
+@@ -21,6 +21,7 @@
+ #include <inttypes.h>
+ #include <math.h>
+ #include <stdio.h>
++#include "arena/arena_hooks.h"
+ 
+ #include "examples/heat_pump/cs_lpc_listener.h"
+ #include "src/common/eebus_arguments.h"
+@@ -98,6 +99,7 @@
+ ) {
+   UNUSED(self);
+ 
++  ArenaLimit("lpc", power_limit, duration, is_active);
+   ScaledValuePrint("CS LPC Power Limit received %sW, ", power_limit);
+   EebusDurationPrint("duration = %s, ", duration);
+   printf("active = %s\n", is_active ? "true" : "false");
+--- a/upstream/examples/heat_pump/cs_lpp_listener.c
++++ b/upstream/examples/heat_pump/cs_lpp_listener.c
+@@ -21,6 +21,7 @@
+ #include <inttypes.h>
+ #include <math.h>
+ #include <stdio.h>
++#include "arena/arena_hooks.h"
+ 
+ #include "examples/heat_pump/cs_lpp_listener.h"
+ #include "src/common/eebus_arguments.h"
+@@ -98,6 +99,7 @@
+ ) {
+   UNUSED(self);
+ 
++  ArenaLimit("lpp", power_limit, duration, is_active);
+   ScaledValuePrint("CS LPP Power Limit received %sW, ", power_limit);
+   EebusDurationPrint("duration = %s, ", duration);
+   printf("active = %s\n", is_active ? "true" : "false");
+--- a/upstream/examples/heat_pump/hpsrv.c
++++ b/upstream/examples/heat_pump/hpsrv.c
+@@ -1,3 +1,4 @@
++#include "arena/arena_hooks.h"
+ /*
+  * Copyright 2025 NIBE AB
+  *
+@@ -293,7 +294,7 @@
+     return err;
+   }
+ 
+-  err = AddMpc(self, device_local, entity);
++  err = kEebusErrorOk;
+   if (err != kEebusErrorOk) {
+     EntityLocalDelete(entity);
+     return err;
+@@ -485,12 +486,13 @@
+     return kEebusErrorInputArgument;
+   }
+ 
+-  hpsrv->cfg = EebusServiceConfigCreate("NIBE", "NIBE", "HeatPump", "123456789", "HeatGenerationSystem", port);
++  hpsrv->cfg = EebusServiceConfigCreate("NIBE", "NIBE", "HeatPump", ArenaNodeId(),
++                                        "HeatGenerationSystem", port);
+   if (hpsrv->cfg == NULL) {
+     return kEebusErrorOther;
+   }
+ 
+-  EebusServiceConfigSetAlternateIdentifier(hpsrv->cfg, "NIBE-HeatPump-123456789");
++  EebusServiceConfigSetAlternateIdentifier(hpsrv->cfg, ArenaNodeId());
+ 
+   hpsrv->service = EebusServiceCreate(hpsrv->cfg, role, tls_certificate, SERVICE_READER_OBJECT(hpsrv));
+   if (hpsrv->service == NULL) {
+@@ -510,20 +512,25 @@
+ 
+   uint32_t ohpcf_entity_ids[2] = {entity_ids[0], 1};
+ 
+-  if (AddCompressorEntity(hpsrv, device_local, ohpcf_entity_ids, ARRAY_SIZE(ohpcf_entity_ids)) != kEebusErrorOk) {
++  if (false && AddCompressorEntity(hpsrv, device_local, ohpcf_entity_ids,
++                                   ARRAY_SIZE(ohpcf_entity_ids)) != kEebusErrorOk) {
+     return kEebusErrorOther;
+   }
+ 
+   uint32_t inverter_entity_ids[1] = {VectorGetSize(DEVICE_LOCAL_GET_ENTITIES(device_local))};
+-  if (AddInverterEntity(hpsrv, device_local, inverter_entity_ids, ARRAY_SIZE(inverter_entity_ids)) != kEebusErrorOk) {
++  if (false && AddInverterEntity(hpsrv, device_local, inverter_entity_ids,
++                                 ARRAY_SIZE(inverter_entity_ids)) != kEebusErrorOk) {
+     return kEebusErrorOther;
+   }
+ 
+   uint32_t gcp_entity_ids[1] = {VectorGetSize(DEVICE_LOCAL_GET_ENTITIES(device_local))};
+-  if (AddGridConnectionPointEntity(hpsrv, device_local, gcp_entity_ids, ARRAY_SIZE(gcp_entity_ids)) != kEebusErrorOk) {
++  if (false && AddGridConnectionPointEntity(hpsrv, device_local, gcp_entity_ids,
++                                            ARRAY_SIZE(gcp_entity_ids)) != kEebusErrorOk) {
+     return kEebusErrorOther;
+   }
+ 
++  if (ArenaMonitoringSetup(device_local) != kEebusErrorOk)
++    return kEebusErrorInit;
+   EEBUS_SERVICE_START(hpsrv->service);
+ 
+   return kEebusErrorOk;
+@@ -606,14 +613,14 @@
+   UNUSED(self);
+   UNUSED(service);
+ 
+-  printf("Remote SKI connected: %s\n", ski);
++  ArenaPeer(ski, "connected");
+ }
+ 
+ void OnRemoteSkiDisconnected(ServiceReaderObject* self, EebusServiceObject* service, const char* ski) {
+   UNUSED(self);
+   UNUSED(service);
+ 
+-  printf("Remote SKI disconnected: %s\n", ski);
++  ArenaPeer(ski, "disconnected");
+ }
+ 
+ void OnRemoteServicesUpdate(ServiceReaderObject* self, EebusServiceObject* service, const Vector* entries) {
+@@ -621,7 +628,9 @@
+   UNUSED(service);
+   UNUSED(entries);
+ 
+-  // Optional: print the remote services
++  cJSON* data = cJSON_CreateObject();
++  cJSON_AddNumberToObject(data, "count", VectorGetSize(entries));
++  ArenaEmit("mdns.services", NULL, data);
+ }
+ 
+ void OnShipIdUpdate(ServiceReaderObject* self, const char* ski, const char* shipd_id) {
+@@ -632,14 +641,17 @@
+ void OnShipStateUpdate(ServiceReaderObject* self, const char* ski, SmeState state) {
+   UNUSED(self);
+ 
+-  printf("Ship state update for SKI %s: %d\n", ski, state);
++  cJSON* data = cJSON_CreateObject();
++  cJSON_AddStringToObject(data, "ski", ski);
++  cJSON_AddNumberToObject(data, "state", state);
++  ArenaEmit("ship.transition", NULL, data);
+ }
+ 
+ bool IsWaitingForTrustAllowed(const ServiceReaderObject* self, const char* ski) {
+   UNUSED(self);
+   UNUSED(ski);
+ 
+-  return true;
++  return ArenaTrusted(ski);
+ }
+ 
+ void HpsrvRegisterRemoteSki(HpsrvObject* self, const char* ski) {
+--- a/upstream/examples/hems/hems.c
++++ b/upstream/examples/hems/hems.c
+@@ -1,3 +1,4 @@
++#include "arena/arena_hooks.h"
+ /*
+  * Copyright 2025 NIBE AB
+  *
+@@ -226,12 +227,13 @@
+     return kEebusErrorInputArgument;
+   }
+ 
+-  hems->cfg = EebusServiceConfigCreate("OpenEEBUS", "OpenEEBUS", "HEMS", "123456789", "EnergyManagementSystem", port);
++  hems->cfg = EebusServiceConfigCreate("OpenEEBUS", "OpenEEBUS", "HEMS", ArenaNodeId(),
++                                       "EnergyManagementSystem", port);
+   if (hems->cfg == NULL) {
+     return kEebusErrorInit;
+   }
+ 
+-  EebusServiceConfigSetAlternateIdentifier(hems->cfg, "OpenEEBUS-HEMS-123456789");
++  EebusServiceConfigSetAlternateIdentifier(hems->cfg, ArenaNodeId());
+ 
+   hems->service = EebusServiceCreate(hems->cfg, role, tls_certificate, SERVICE_READER_OBJECT(hems));
+   if (hems->service == NULL) {
+@@ -262,7 +264,7 @@
+     return err;
+   }
+ 
+-  err = AddMaMpc(hems, device_local, entity);
++  err = kEebusErrorOk;
+   if (err != kEebusErrorOk) {
+     EntityLocalDelete(entity);
+     return err;
+@@ -274,13 +276,15 @@
+     return err;
+   }
+ 
+-  err = AddMaMgcp(hems, device_local, entity);
++  err = kEebusErrorOk;
+   if (err != kEebusErrorOk) {
+     EntityLocalDelete(entity);
+     return err;
+   }
+ 
+   DEVICE_LOCAL_ADD_ENTITY(device_local, entity);
++  if (ArenaMonitoringSetup(device_local) != kEebusErrorOk)
++    return kEebusErrorInit;
+   EEBUS_SERVICE_START(hems->service);
+ 
+   return kEebusErrorOk;
+@@ -365,14 +369,14 @@
+   UNUSED(self);
+   UNUSED(service);
+ 
+-  printf("Remote SKI connected: %s\n", ski);
++  ArenaPeer(ski, "connected");
+ }
+ 
+ void OnRemoteSkiDisconnected(ServiceReaderObject* self, EebusServiceObject* service, const char* ski) {
+   UNUSED(self);
+   UNUSED(service);
+ 
+-  printf("Remote SKI disconnected: %s\n", ski);
++  ArenaPeer(ski, "disconnected");
+ }
+ 
+ void OnRemoteServicesUpdate(ServiceReaderObject* self, EebusServiceObject* service, const Vector* entries) {
+@@ -380,7 +384,9 @@
+   UNUSED(service);
+   UNUSED(entries);
+ 
+-  // Optional: print the remote services
++  cJSON* data = cJSON_CreateObject();
++  cJSON_AddNumberToObject(data, "count", VectorGetSize(entries));
++  ArenaEmit("mdns.services", NULL, data);
+ }
+ 
+ void OnShipIdUpdate(ServiceReaderObject* self, const char* ski, const char* shipd_id) {
+@@ -392,14 +398,17 @@
+ void OnShipStateUpdate(ServiceReaderObject* self, const char* ski, SmeState state) {
+   UNUSED(self);
+ 
+-  printf("Ship state update for SKI %s: %d\n", ski, state);
++  cJSON* data = cJSON_CreateObject();
++  cJSON_AddStringToObject(data, "ski", ski);
++  cJSON_AddNumberToObject(data, "state", state);
++  ArenaEmit("ship.transition", NULL, data);
+ }
+ 
+ bool IsWaitingForTrustAllowed(const ServiceReaderObject* self, const char* ski) {
+   UNUSED(self);
+   UNUSED(ski);
+ 
+-  return true;
++  return ArenaTrusted(ski);
+ }
+ 
+ void HemsRegisterRemoteSki(HemsObject* self, const char* ski) {
+@@ -418,6 +427,7 @@
+   }
+ 
+   EntityAddressListAdd(&hems->eg_lpc_remotes, entity_addr);
++  ArenaHemsPartner(self, "lpc", entity_addr, true);
+   if (EntityAddressListGetSize(&hems->eg_lpc_remotes) == 1) {
+     EEBUS_CLI_SET_EG_LPC(hems->cli, hems->eg_lpc, &hems->eg_lpc_remotes);
+   }
+@@ -430,6 +440,7 @@
+     return;
+   }
+ 
++  ArenaHemsPartner(self, "lpc", entity_addr, false);
+   EntityAddressListRemove(&hems->eg_lpc_remotes, entity_addr);
+   if (EntityAddressListGetSize(&hems->eg_lpc_remotes) == 0) {
+     EEBUS_CLI_SET_EG_LPC(hems->cli, NULL, NULL);
+@@ -444,6 +455,7 @@
+   }
+ 
+   EntityAddressListAdd(&hems->eg_lpp_remotes, entity_addr);
++  ArenaHemsPartner(self, "lpp", entity_addr, true);
+   if (EntityAddressListGetSize(&hems->eg_lpp_remotes) == 1) {
+     EEBUS_CLI_SET_EG_LPP(hems->cli, hems->eg_lpp, &hems->eg_lpp_remotes);
+   }
+@@ -456,6 +468,7 @@
+     return;
+   }
+ 
++  ArenaHemsPartner(self, "lpp", entity_addr, false);
+   EntityAddressListRemove(&hems->eg_lpp_remotes, entity_addr);
+   if (EntityAddressListGetSize(&hems->eg_lpp_remotes) == 0) {
+     EEBUS_CLI_SET_EG_LPP(hems->cli, NULL, NULL);
+--- a/upstream/src/spine/heartbeat/heartbeat_manager.c
++++ b/upstream/src/spine/heartbeat/heartbeat_manager.c
+@@ -20,6 +20,7 @@
+ 
+ #include <stdint.h>
+ #include <time.h>
++#include "arena/arena_hooks.h"
+ 
+ #include "src/common/eebus_malloc.h"
+ #include "src/spine/api/entity_local_interface.h"
+@@ -38,14 +39,14 @@
+   EntityLocalObject* local_entity;
+   FeatureLocalObject* local_feature;
+   uint64_t heartbeat_num;
+-  uint32_t tick_cnt;
++  _Atomic uint32_t tick_cnt;
+   // Period (in ticks/seconds) between two heartbeat transmissions.
+   // Note: this is not the remote heartbeat timeout (the deadline by which the
+   // remote expects a heartbeat); the application should choose
+   // heartbeat period <= remote heartbeat timeout.
+-  uint32_t heartbeat_period;
++  _Atomic uint32_t heartbeat_period;
+ 
+-  bool running;
++  _Atomic bool running;
+ };
+ 
+ #define HEARTBEAT_MANAGER(obj) ((HeartbeatManager*)(obj))
+@@ -124,12 +125,12 @@
+ void Tick(HeartbeatManagerObject* self) {
+   HeartbeatManager* const hm = HEARTBEAT_MANAGER(self);
+ 
+-  if (hm->heartbeat_period == 0) {
++  if (!hm->running || hm->heartbeat_period == 0) {
+     return;
+   }
+ 
+   if ((hm->running) && (hm->tick_cnt > 0)) {
+-    hm->tick_cnt--;
++    hm->tick_cnt = hm->tick_cnt > ArenaTimeScale() ? hm->tick_cnt - ArenaTimeScale() : 0;
+   }
+ 
+   if (hm->tick_cnt == 0) {
+@@ -168,3 +169,9 @@
+     hm->running = false;
+   }
+ }
++
++void ArenaHeartbeatInterval(HeartbeatManagerObject* object, unsigned period) {
++  HeartbeatManager* hm = HEARTBEAT_MANAGER(object);
++  hm->heartbeat_period = period;
++  hm->tick_cnt = period;
++}

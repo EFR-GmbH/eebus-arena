@@ -1,0 +1,13 @@
+# go mod tidy also reads upstream test dependencies; retain those modules.
+**
+!.arena/generated/enbility/provenance.json
+!.arena/generated/enbility/licenses/**
+!.arena/generated/enbility/adapter/**
+!.arena/generated/enbility/runtime/**
+!.arena/generated/enbility/eebus/**
+!.arena/generated/enbility/ship/**
+!.arena/generated/enbility/spine/**
+**/.github/**
+**/docs/**
+**/__pycache__/**
+**/*.pyc

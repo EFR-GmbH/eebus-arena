@@ -1,0 +1,18 @@
+# Native sources and CMake inputs. Omit unused test apps and documentation.
+**
+!.arena/generated/openeebus/provenance.json
+!.arena/generated/openeebus/licenses/**
+!.arena/generated/openeebus/runtime/**
+!.arena/generated/openeebus/upstream/CMakeLists.txt
+!.arena/generated/openeebus/upstream/sources.cmake
+!.arena/generated/openeebus/upstream/src/**
+!.arena/generated/openeebus/upstream/arena/**
+!.arena/generated/openeebus/upstream/examples/**
+!.arena/generated/openeebus/libwebsockets/CMakeLists*
+!.arena/generated/openeebus/libwebsockets/cmake/**
+!.arena/generated/openeebus/libwebsockets/include/**
+!.arena/generated/openeebus/libwebsockets/lib/**
+!.arena/generated/openeebus/libwebsockets/plugins/CMakeLists.txt
+!.arena/generated/openeebus/libwebsockets/lwsws/CMakeLists.txt
+**/__pycache__/**
+**/*.pyc

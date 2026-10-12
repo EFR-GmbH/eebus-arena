@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "sources": {
+    "enbility-eebus": {
+      "repository": "enbility/eebus-go",
+      "commit": "8583642861c39a673c68f6e4a5089d338e0bffa1",
+      "sha256": "6efb35d8df0facc1ee0b4999875b0fec54dfaf9e6bf8bfb9d8e3bec1c009d670"
+    },
+    "enbility-ship": {
+      "repository": "enbility/ship-go",
+      "commit": "a84426bc38105a14b50dad23c0615bff0430af7b",
+      "sha256": "6bbe2a0da8cdaeec8a43856bb07f33463bf095209d1ff1f1cf6bcadc1eeb8ee4"
+    },
+    "enbility-spine": {
+      "repository": "enbility/spine-go",
+      "commit": "eb2cd4daba1302bad64aed6bda136b4c3884143f",
+      "sha256": "aee1908f6f11c7de9d2b6beb8cd79a218d63454e00faaf39614dcb5a1902d884"
+    },
+    "openeebus": {
+      "repository": "NIBEGroup/openeebus",
+      "commit": "c31acf5ef36bf966d11600f74f62fbdafb3a7470",
+      "sha256": "cf4ba40ae86d751c983221b05a1b414ee807b7bd9f3a53de5b9266668314eda7"
+    },
+    "jeebus-cs": {
+      "repository": "openmuc/jeebus.usecase.powerlimitation.controllablesystem",
+      "commit": "582899deda5925d625c3dfb7dbb8dc6507c8d960",
+      "sha256": "a516653f71f66024e1e7c0055900ed1f43a6aabc82a14bfe6fe04670e8ad9520"
+    },
+    "libwebsockets": {
+      "repository": "warmcat/libwebsockets",
+      "commit": "85c6f7959fd40d8aaf7a50be3c9b75f08389a01c",
+      "sha256": "eceb5b1efdaf73505ee60c1761ae457f9d663aed06009057f8fed117ed8e91b3"
+    }
+  },
+  "images": {
+    "go": "golang:1.27.1-bookworm@sha256:a4f46dc39c6b0359a3e1ed86ef14d01b374cc808649679dd5fca2290e6d54202",
+    "node": "node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20",
+    "debian": "debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587",
+    "jdk": "eclipse-temurin:21-jdk-jammy@sha256:e0c60c487345d1dc9d0fc7b6f0496f3cc941e5132e09296cc17a6decc71b902b",
+    "jre": "eclipse-temurin:21-jre-jammy@sha256:f04fb34e053148344e83317976114ec3f37e4b830ec8bdab5a2fe3cecd7d010b",
+    "docker": "docker:29.7.2-cli@sha256:3f4743208d2338c934d7b8bcfbe1bb54c0b2355c510ad5e0f31c0c4a54bd704e",
+    "compose": "docker/compose-bin:v5.4.0@sha256:b03e46987ca4ebb41ca31b765ad7ba957388003f1ef1255fd68333a7b838d632",
+    "grafana": "grafana/grafana:13.2.0@sha256:3fd54ae1214669f8355f065ec9f6445d5279a3d77095ab048ca045685272429b",
+    "prometheus": "prom/prometheus:v3.7.3@sha256:49214755b6153f90a597adcbff0252cc61069f8ab69ce8411285cd4a560e8038",
+    "python": "python:3.14.8-slim-bookworm@sha256:48b13b003dda20b16f9442b8475aa05fe21bf6579a8c881db92ffb4d8fd20f83",
+    "hadolint": "hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d"
+  },
+  "toolchains": {
+    "go": "1.27.1",
+    "node": "24.21.0",
+    "python": "3.14.8",
+    "java": "21",
+    "gradle": "8.5",
+    "hadolint": "2.15.1",
+    "debianSnapshot": "20261005T000000Z",
+    "platform": "linux/amd64"
+  },
+  "mavenSources": {
+    "spine": {
+      "version": "4.1.1",
+      "sha256": "c458247a61d2f19c1f336bc4a38a68cf27920d641763a187320316c8b7cfcc66"
+    },
+    "ship": {
+      "version": "3.0.1",
+      "sha256": "9bf64069b377ef50a57b97ce5fb2527e6df8b879c70f2bfe3b176801b3284328"
+    }
+  }
+}

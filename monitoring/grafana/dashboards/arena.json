@@ -1,0 +1,139 @@
+{
+  "title": "EEBUS Arena",
+  "uid": "eebus-arena",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "run",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "arena"
+        },
+        "query": "label_values(arena_node_memory_bytes, run)",
+        "refresh": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Memory by stack",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "arena"
+      },
+      "targets": [
+        {
+          "expr": "sum by(stack) (arena_node_memory_bytes{run=\"$run\"})",
+          "refId": "A",
+          "legendFormat": "{{stack}}{{event}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "CPU by stack",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "arena"
+      },
+      "targets": [
+        {
+          "expr": "sum by(stack) (arena_node_cpu_percent{run=\"$run\"})",
+          "refId": "A",
+          "legendFormat": "{{stack}}{{event}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Network receive",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "arena"
+      },
+      "targets": [
+        {
+          "expr": "sum by(stack) (rate(arena_node_network_receive_bytes_total{run=\"$run\"}[1m]))",
+          "refId": "A",
+          "legendFormat": "{{stack}}{{event}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Protocol errors and telemetry gaps",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "arena"
+      },
+      "targets": [
+        {
+          "expr": "sum by(event) (arena_events_total{run=\"$run\",event=~\".*error.*|.*gap.*|.*timeout.*|.*failure.*\"})",
+          "refId": "A",
+          "legendFormat": "{{stack}}{{event}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "sources": {
+    "openeebus": {
+      "repository": "mihajlo-zivkovic/openeebus",
+      "commit": "243c0b415b7240f86cabdc187c73416ac2120417",
+      "sha256": "99c2722a1b12be9273aec76537a24e31de179c4255f5be04d763831a1de1d0c8"
+    }
+  }
+}

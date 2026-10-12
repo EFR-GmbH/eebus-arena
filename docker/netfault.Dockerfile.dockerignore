@@ -1,0 +1,7 @@
+**
+!go.mod
+!cmd
+cmd/**
+!cmd/arena-netfault
+!cmd/arena-netfault/*.go
+**/*_test.go

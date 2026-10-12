@@ -1,0 +1,10 @@
+{
+  "upstream/CMakeLists.txt": "eaf928dd4677877d0eda6f5573ead94a7802b599ee9d5f73ab2456d94bd9caeb",
+  "upstream/examples/heat_pump/cs_lpc_listener.c": "edfa06d565c8aa7336e02b077cb2847be452cc84858f4e79642e408995b3be9a",
+  "upstream/examples/heat_pump/cs_lpp_listener.c": "13798eed34d0df4b49c0f8bc43158ced4d486ffd4df99957fb8a9022034c2c27",
+  "upstream/examples/heat_pump/hpsrv.c": "6a70e02099cda3d23298aeb6099ee870464a4cf824299b65ae2bb7ba9c97fa78",
+  "upstream/examples/hems/hems.c": "d841cbf25a45eca3910e81e46da94b080c6decd169529584d752f55554537fcf",
+  "upstream/src/ship/ship_node/ship_node.c": "cff2facb46cc3fb9ba939c7987000ea36049340c1f43e6eac81d7559c54ad183",
+  "upstream/src/ship/ship_pairing/ship_pairing.c": "529aef2e026e434fb78ea00765812d9f60c9b4a77eb26b8db6d7a2e3353b246d",
+  "upstream/src/spine/heartbeat/heartbeat_manager.c": "3d13dd204c4f55e2a05517aaa005040ee5d9749db5ee4007038028f8e0f99c4d"
+}

@@ -1,0 +1,17 @@
+# First-party sources, locked Gradle configuration and distribution manifests.
+**
+!.arena/generated/jeebus/provenance.json
+!.arena/generated/jeebus/release-sources.json
+!.arena/generated/jeebus/licenses/**
+!.arena/generated/jeebus/runtime/**
+!.arena/generated/jeebus/upstream/build.gradle
+!.arena/generated/jeebus/upstream/configuration.gradle
+!.arena/generated/jeebus/upstream/settings.gradle
+!.arena/generated/jeebus/upstream/gradle/verification-metadata.xml
+!.arena/generated/jeebus/upstream/gradle/develop/**
+!.arena/generated/jeebus/upstream/projects/**
+**/src/test/**
+**/build/**
+**/.gradle/**
+**/__pycache__/**
+**/*.pyc

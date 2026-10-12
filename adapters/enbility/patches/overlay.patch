@@ -1,0 +1,457 @@
+Arena control and observation hooks for the pinned Enbility sources.
+
+WHY: accelerated heartbeat expiry must use the same clock scale as transmission.
+Pairing observations run beside native validation; they do not accept requests.
+The MGCP provider's actor is corrected at its source so observations retain the
+native identity rather than silently relabeling it in the adapter. Network mode
+must constrain discovery, outgoing connections, and the listener consistently.
+
+--- a/eebus/features/internal/devicediagnosis.go
++++ b/eebus/features/internal/devicediagnosis.go
+@@ -1,6 +1,8 @@
+ package internal
+ 
+ import (
++	spineimpl "github.com/enbility/spine-go/spine"
++	"sync/atomic"
+ 	"time"
+ 
+ 	"github.com/enbility/eebus-go/api"
+@@ -53,7 +55,7 @@
+ 		return false
+ 	}
+ 
+-	diff := time.Now().UTC().Add(-1 * duration)
++	diff := time.Now().UTC().Add(-1 * duration / time.Duration(atomic.LoadInt64(&spineimpl.ArenaTimeScale)))
+ 
+ 	return diff.Compare(timeValue.Local()) <= 0
+ }
+--- a/eebus/service/service.go
++++ b/eebus/service/service.go
+@@ -340,3 +340,16 @@
+ func (s *Service) GetTrustedAddCuDevice() *shipapi.ServiceDetails {
+ 	return s.connectionsHub.GetTrustedAddCuDevice()
+ }
++
++// ArenaQueryMdns exposes the upstream discovery request.
++func (s *Service) ArenaQueryMdns() { s.mdns.RequestMdnsEntries() }
++
++// ArenaSetMaxConnections exposes the upstream capacity setting.
++func (s *Service) ArenaSetMaxConnections(max int) { s.connectionsHub.SetMaxConnections(max) }
++
++func (s *Service) ArenaListenerStatus() map[string]any {
++	if h, ok := s.connectionsHub.(interface{ ArenaListenerStatus() map[string]any }); ok {
++		return h.ArenaListenerStatus()
++	}
++	return nil
++}
+--- a/eebus/usecases/gcp/mgcp/usecase.go
++++ b/eebus/usecases/gcp/mgcp/usecase.go
+@@ -136,7 +136,7 @@
+ 
+ 	usecase := usecase.NewUseCaseBase(
+ 		localEntity,
+-		model.UseCaseActorTypeMonitoringAppliance,
++		model.UseCaseActorTypeGridConnectionPoint,
+ 		model.UseCaseNameTypeMonitoringOfGridConnectionPoint,
+ 		"1.0.0",
+ 		"release",
+--- /dev/null
++++ b/ship/api/arena_observer.go
+@@ -0,0 +1,13 @@
++package api
++
++// ArenaObserver is assigned before native initialization and never mutated afterwards.
++var ArenaObserver func(string, map[string]any)
++
++func ArenaObserve(kind string, data map[string]any) {
++	if ArenaObserver != nil {
++		ArenaObserver(kind, data)
++	}
++}
++
++// ArenaNetworkMode is immutable after initialization.
++var ArenaNetworkMode string
+--- a/ship/hub/addcu_replacement_tracker.go
++++ b/ship/hub/addcu_replacement_tracker.go
+@@ -4,6 +4,7 @@
+ 	"sync"
+ 	"time"
+ 
++	"github.com/enbility/ship-go/api"
+ 	"github.com/enbility/ship-go/logging"
+ )
+ 
+@@ -92,6 +93,7 @@
+ 	// Set up new tracking state
+ 	t.pairedDeviceShipID = shipID
+ 	t.disconnectionTime = time.Now()
++	api.ArenaObserve("pairing.replacement", map[string]any{"shipId": shipID, "state": "started", "deadline": t.disconnectionTime.Add(t.timeout), "durationSeconds": t.timeout.Seconds()})
+ 
+ 	// Create new timer with callback
+ 	t.timer = time.AfterFunc(t.timeout, func() {
+@@ -143,6 +145,7 @@
+ 	// Stop the timer if it exists
+ 	if t.timer != nil {
+ 		t.timer.Stop()
++		api.ArenaObserve("pairing.replacement", map[string]any{"shipId": shipID, "state": "stopped"})
+ 		logging.Log().Debug("AddCu replacement timer stopped", "shipID", shipID, "disconnectedFor", time.Since(t.disconnectionTime))
+ 	}
+ 
+--- a/ship/hub/hub.go
++++ b/ship/hub/hub.go
+@@ -793,6 +793,7 @@
+ // handleAddCuReplacementTimeout handles timeout callback from AddCu replacement tracker
+ // Timeout only reactivates pairing listener - trust removal happens during replacement pairing
+ func (h *Hub) handleAddCuReplacementTimeout(expiredShipID string) {
++	api.ArenaObserve("pairing.replacement", map[string]any{"shipId": expiredShipID, "state": "expired"})
+ 	logging.Log().Debug("AddCu device replacement timeout - reactivating pairing listener", "shipID", expiredShipID)
+ 
+ 	// Find the service for this ShipID
+@@ -910,3 +911,19 @@
+ 
+ 	return firstMatch
+ }
++
++// ArenaListenerStatus observes the existing listener without changing its lifecycle.
++func (h *Hub) ArenaListenerStatus() map[string]any {
++	h.muxPairingListener.RLock()
++	listener := h.activePairingListener
++	h.muxPairingListener.RUnlock()
++	if listener == nil {
++		return map[string]any{"active": false}
++	}
++	status := listener.GetListenerStatus()
++	result := map[string]any{"active": status.Active, "requestsSeen": status.RequestsSeen, "startTime": status.StartTime, "lastRequest": status.LastRequest}
++	if status.Error != nil {
++		result["error"] = status.Error.Error()
++	}
++	return result
++}
+--- a/ship/hub/hub_connections_client.go
++++ b/ship/hub/hub_connections_client.go
+@@ -109,10 +109,21 @@
+ 
+ 	if state != nil {
+ 		dialer.NetDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
++			if api.ArenaNetworkMode == "ipv4" || api.ArenaNetworkMode == "" {
++				network = "tcp4"
++			}
++			if api.ArenaNetworkMode == "ipv6" {
++				network = "tcp6"
++			}
+ 			conn, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+ 			if err != nil {
+ 				return nil, err
+ 			}
++			family := "ipv4"
++			if address, ok := conn.RemoteAddr().(*net.TCPAddr); ok && address.IP.To4() == nil {
++				family = "ipv6"
++			}
++			api.ArenaObserve("ship.transport", map[string]any{"family": family, "localAddress": conn.LocalAddr().String(), "remoteAddress": conn.RemoteAddr().String()})
+ 			state.adopt(conn)
+ 			return conn, nil
+ 		}
+--- a/ship/hub/hub_connections_server.go
++++ b/ship/hub/hub_connections_server.go
+@@ -5,6 +5,7 @@
+ 	"crypto/x509"
+ 	"errors"
+ 	"fmt"
++	"net"
+ 	"net/http"
+ 	"time"
+ 
+@@ -110,7 +111,7 @@
+ 
+ 	serverStarted := h.serverStarted // capture for goroutine; prevents closing a replaced channel
+ 	go func() {
+-		err := h.httpServer.ListenAndServeTLS("", "")
++		err := h.arenaServeTLS()
+ 		if err != nil && err != http.ErrServerClosed {
+ 			logging.Log().Error("websocket server error:", err)
+ 			h.serverStartErr = err
+@@ -224,3 +225,18 @@
+ 
+ 	h.startShipConnection(conn, service, ship.ShipRoleServer)
+ }
++
++func (h *Hub) arenaServeTLS() error {
++	network := "tcp"
++	switch api.ArenaNetworkMode {
++	case "ipv4", "":
++		network = "tcp4"
++	case "ipv6":
++		network = "tcp6"
++	}
++	listener, err := net.Listen(network, h.httpServer.Addr)
++	if err != nil {
++		return err
++	}
++	return h.httpServer.ServeTLS(listener, "", "")
++}
+--- a/ship/mdns/mdns.go
++++ b/ship/mdns/mdns.go
+@@ -964,6 +964,7 @@
+ // makes key comparison case-insensitive, mapItems retains the spec spelling
+ // for audit clarity while lookups go through the lowercased form.
+ func (m *MdnsManager) processShipPairingMdnsEntry(elements map[string]string, serviceName string, remove bool) {
++	api.ArenaObserve("pairing.discovery", map[string]any{"service": serviceName, "removed": remove, "shipId": elements["trustid"], "digest": elements["digest"]})
+ 	// A removal is identified by its service instance name alone. mDNS remove
+ 	// events often carry no TXT data (avahi can only echo elements cached at
+ 	// add time, zeroconf reports incomplete records), so removal must be
+@@ -980,6 +981,7 @@
+ 	mapItems := []string{"txtvers", "parType", "forId", "forPar", "trustId", "trustPar", "trustCurve", "type", "trustNonce", "alg", "digest"}
+ 	for _, item := range mapItems {
+ 		if _, ok := elements[strings.ToLower(item)]; !ok {
++			api.ArenaObserve("pairing.validation", map[string]any{"stage": "structure", "ok": false, "reason": "missing-field", "field": item, "service": serviceName})
+ 			logging.Log().Debug("mdns: pairing - missing mandatory element", item, serviceName)
+ 			return
+ 		}
+@@ -988,6 +990,7 @@
+ 	txtvers := elements["txtvers"]
+ 	// Validate txtvers value (must be "1" per SHIP spec)
+ 	if txtvers != "1" {
++		api.ArenaObserve("pairing.validation", map[string]any{"stage": "structure", "ok": false, "reason": "txtvers", "service": serviceName})
+ 		logging.Log().Debug("mdns: pairing - invalid txtvers value", txtvers, serviceName)
+ 		return
+ 	}
+@@ -1021,6 +1024,7 @@
+ 	}
+ 
+ 	if err := validatePairingTXTStrict(newEntry); err != nil {
++		api.ArenaObserve("pairing.validation", map[string]any{"stage": "structure", "ok": false, "reason": err.Error(), "service": serviceName})
+ 		logging.Log().Debug("mdns: pairing - invalid TXT record", err, serviceName)
+ 		return
+ 	}
+--- a/ship/mdns/zeroconf.go
++++ b/ship/mdns/zeroconf.go
+@@ -241,13 +241,13 @@
+ 	// Get a thread-safe copy of interfaces
+ 	ifaces := z.getIfaces()
+ 	go func() {
+-		_ = zeroconf.Browse(myCtx, shipZeroConfServiceType, shipZeroConfDomain, zcEntries, zcRemoved, zeroconf.SelectIfaces(ifaces))
++		_ = zeroconf.Browse(myCtx, shipZeroConfServiceType, shipZeroConfDomain, zcEntries, zcRemoved, zeroconf.SelectIfaces(ifaces), zeroconf.SelectIPTraffic(arenaIPTraffic()))
+ 	}()
+ 
+ 	// Also browse for _shippairing._tcp services
+ 	if pairingMode == api.PairingModeListener || pairingMode == api.PairingModeBoth {
+ 		go func() {
+-			_ = zeroconf.Browse(myCtx, shipPairingZeroConfServiceType, shipZeroConfDomain, zcPairingEntries, zcPairingRemoved, zeroconf.SelectIfaces(ifaces))
++			_ = zeroconf.Browse(myCtx, shipPairingZeroConfServiceType, shipZeroConfDomain, zcPairingEntries, zcPairingRemoved, zeroconf.SelectIfaces(ifaces), zeroconf.SelectIPTraffic(arenaIPTraffic()))
+ 		}()
+ 	}
+ 
+@@ -273,7 +273,7 @@
+ 				continue
+ 			}
+ 
+-			addresses := service.AddrIPv4
++			addresses := arenaAddresses(service)
+ 			cb(elements, service.Instance, service.HostName, service.Service, addresses, service.Port, true)
+ 
+ 		case service := <-zcEntries:
+@@ -294,8 +294,7 @@
+ 				continue
+ 			}
+ 
+-			addresses := service.AddrIPv4
+-			addresses = append(addresses, service.AddrIPv6...)
++			addresses := arenaAddresses(service)
+ 			cb(elements, service.Instance, service.HostName, service.Service, addresses, service.Port, false)
+ 
+ 		case service := <-zcPairingRemoved:
+@@ -310,7 +309,7 @@
+ 				logging.Log().Errorf("duplicate keys in txt record: %v", service.Text)
+ 			}
+ 
+-			addresses := service.AddrIPv4
++			addresses := arenaAddresses(service)
+ 			// Pass _shippairing._tcp as service type to ensure proper routing
+ 			cb(elements, service.Instance, service.HostName, shipPairingZeroConfServiceType, addresses, service.Port, true)
+ 
+@@ -327,10 +326,30 @@
+ 				continue
+ 			}
+ 
+-			addresses := service.AddrIPv4
+-			addresses = append(addresses, service.AddrIPv6...)
++			addresses := arenaAddresses(service)
+ 			// Pass _shippairing._tcp as service type to ensure proper routing
+ 			cb(elements, service.Instance, service.HostName, shipPairingZeroConfServiceType, addresses, service.Port, false)
+ 		}
+ 	}
+ }
++
++func arenaIPTraffic() zeroconf.IPType {
++	switch api.ArenaNetworkMode {
++	case "ipv4", "":
++		return zeroconf.IPv4
++	case "ipv6":
++		return zeroconf.IPv6
++	default:
++		return zeroconf.IPv4AndIPv6
++	}
++}
++func arenaAddresses(entry *zeroconf.ServiceEntry) []net.IP {
++	switch api.ArenaNetworkMode {
++	case "ipv4", "":
++		return entry.AddrIPv4
++	case "ipv6":
++		return entry.AddrIPv6
++	default:
++		return append(append([]net.IP(nil), entry.AddrIPv4...), entry.AddrIPv6...)
++	}
++}
+--- a/ship/pairing/listener.go
++++ b/ship/pairing/listener.go
+@@ -74,6 +74,7 @@
+ 	copy(l.secret, secret)
+ 	l.startTime = time.Now()
+ 	l.listening = true
++	api.ArenaObserve("pairing.listener", map[string]any{"active": true})
+ 
+ 	// Start mDNS search
+ 	go func() {
+@@ -189,6 +190,7 @@
+ 
+ // handlePairingRequest processes incoming pairing requests (internal method for testing)
+ func (l *PairingListener) handlePairingRequest(txtRecord *api.ShipPairingTXT) bool {
++	api.ArenaObserve("pairing.validation", map[string]any{"stage": "structure", "shipId": txtRecord.TrustId, "digest": txtRecord.Digest})
+ 	l.mux.Lock()
+ 	l.requestsSeen++
+ 	l.lastRequest = time.Now()
+@@ -201,6 +203,7 @@
+ 		return true // Continue listening
+ 	}
+ 
++	api.ArenaObserve("pairing.validation", map[string]any{"stage": "structure", "ok": true, "digest": txtRecord.Digest})
+ 	// Check if announcement is for us
+ 	if txtRecord.ForId != l.localService.ShipID() {
+ 		logging.Log().Tracef("pairing listener: announcement not for us in handlePairingRequest - wanted: %s, got: %s",
+@@ -216,6 +219,7 @@
+ 		return true
+ 	}
+ 
++	api.ArenaObserve("pairing.validation", map[string]any{"stage": "target", "ok": true, "digest": txtRecord.Digest})
+ 	// Runtime capability check: this implementation only supports secp256r1.
+ 	if txtRecord.TrustCurve != api.CurveSecp256r1 {
+ 		logging.Log().Tracef("pairing listener: unsupported trust curve in handlePairingRequest - supported: %s, got: %s",
+@@ -257,6 +261,7 @@
+ 		return true // Continue listening
+ 	}
+ 
++	api.ArenaObserve("pairing.validation", map[string]any{"stage": "authentication", "ok": true, "digest": txtRecord.Digest})
+ 	// Check replay protection
+ 	if l.history.HasSeenDigest(txtRecord.Alg, txtRecord.Digest) {
+ 		logging.Log().Trace("pairing listener: replay attack detected - digest already seen")
+@@ -268,6 +273,7 @@
+ 	// "devA SHALL trust" after successful evaluation - no user interaction required
+ 
+ 	// Record successful pairing in ring buffer per SHIP spec section 11
++	api.ArenaObserve("pairing.validation", map[string]any{"stage": "replay", "ok": true, "digest": txtRecord.Digest})
+ 	l.history.RecordPairing(txtRecord.Alg, txtRecord.Digest)
+ 
+ 	// Establish trust automatically per SHIP spec (no conditions)
+@@ -284,6 +290,7 @@
+ 
+ // handleMdnsDiscovery processes mDNS discoveries (internal method for testing)
+ func (l *PairingListener) handleMdnsDiscovery(txtRecord *api.ShipPairingTXT) bool {
++	api.ArenaObserve("pairing.record", map[string]any{"shipId": txtRecord.TrustId, "forId": txtRecord.ForId, "digest": txtRecord.Digest})
+ 	l.mux.RLock()
+ 	listening := l.listening
+ 	l.mux.RUnlock()
+@@ -294,6 +301,7 @@
+ 
+ 	// Filter to only process announcements for our device
+ 	if txtRecord.ForId != l.localService.ShipID() {
++		api.ArenaObserve("pairing.validation", map[string]any{"stage": "target", "ok": false, "reason": "not-for-this-node", "digest": txtRecord.Digest})
+ 		return true // Continue searching
+ 	}
+ 
+@@ -326,4 +334,5 @@
+ 	}
+ 
+ 	l.listening = false
+-}
++	api.ArenaObserve("pairing.listener", map[string]any{"active": false})
++}
+--- a/spine/spine/device_remote.go
++++ b/spine/spine/device_remote.go
+@@ -157,6 +157,9 @@
+ 
+ 	datagram := model.Datagram{}
+ 	if err := json.Unmarshal([]byte(fixedMessage), &datagram); err != nil {
++		if ArenaMessageObserver != nil {
++			ArenaMessageObserver("spine.parse_error", err)
++		}
+ 		return nil, err
+ 	}
+ 
+@@ -166,6 +169,9 @@
+ 
+ 	err := d.localDevice.ProcessCmd(datagram.Datagram, d)
+ 	if err != nil {
++		if ArenaMessageObserver != nil {
++			ArenaMessageObserver("spine.processing_error", err)
++		}
+ 		logging.Log().Trace(err)
+ 	}
+ 
+@@ -430,3 +436,6 @@
+ 
+ 	return nil
+ }
++
++// ArenaMessageObserver reports native failures without changing their handling.
++var ArenaMessageObserver func(kind string, err error)
+--- a/spine/spine/heartbeat_manager.go
++++ b/spine/spine/heartbeat_manager.go
+@@ -1,6 +1,7 @@
+ package spine
+ 
+ import (
++	"fmt"
+ 	"sync"
+ 	"sync/atomic"
+ 	"time"
+@@ -132,14 +133,14 @@
+ 	c.localFeature.SetData(model.FunctionTypeDeviceDiagnosisHeartbeatData, heartbeatData)
+ 	c.mux.Unlock()
+ 
+-	ticker := time.NewTicker(d)
++	ticker := time.NewTicker(d / time.Duration(atomic.LoadInt64(&ArenaTimeScale)))
++	defer ticker.Stop()
+ 	for {
+ 		select {
+ 		case <-ticker.C:
+ 
++			c.mux.Lock()
+ 			heartbeatData = c.heartbeatData(time.Now().UTC(), c.heartBeatCounter())
+-
+-			c.mux.Lock()
+ 			// updating the data will automatically notify all subscribed remote features
+ 			c.localFeature.SetData(model.FunctionTypeDeviceDiagnosisHeartbeatData, heartbeatData)
+ 			c.mux.Unlock()
+@@ -165,3 +166,21 @@
+ 	i := atomic.AddUint64(&c.heartBeatNum, 1)
+ 	return &i
+ }
++
++// ArenaSetInterval is a control hook; it does not supply use-case state logic.
++func (c *HeartbeatManager) ArenaSetInterval(interval time.Duration) error {
++	if interval < time.Second {
++		return fmt.Errorf("interval must be at least one second")
++	}
++	running := c.IsHeartbeatRunning()
++	c.StopHeartbeat()
++	c.mux.Lock()
++	c.heartBeatTimeout = model.NewDurationType(interval)
++	c.mux.Unlock()
++	if running {
++		return c.StartHeartbeat()
++	}
++	return nil
++}
++
++var ArenaTimeScale int64 = 1

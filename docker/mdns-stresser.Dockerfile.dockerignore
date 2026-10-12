@@ -1,0 +1,5 @@
+**
+!.arena/generated/mdns-stresser/**
+**/*_test.go
+**/__pycache__/**
+**/*.pyc

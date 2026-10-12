@@ -1,0 +1,70 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  dockerfiles:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: >-
+          docker run --rm --network none
+          --mount type=bind,src="$GITHUB_WORKSPACE",dst=/workspace,readonly
+          --workdir /workspace
+          hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d
+          hadolint --failure-threshold info docker/*.Dockerfile
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14.8'
+      - run: python3 scripts/verify_build_contexts.py orchestrator
+  go:
+    runs-on: ubuntu-24.04
+    container: golang:1.27.1-bookworm@sha256:a4f46dc39c6b0359a3e1ed86ef14d01b374cc808649679dd5fca2290e6d54202
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          go test -race ./...
+          go vet ./...
+  web:
+    runs-on: ubuntu-24.04
+    container: node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          node scripts/check_static_bundle.mjs snapshot /tmp/static-before.json
+          npm ci --prefix web
+          npm run build --prefix web
+          node scripts/check_static_bundle.mjs compare /tmp/static-before.json
+  language-quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 scripts/dev.py build
+      - run: python3 scripts/dev.py check
+      - run: |
+          docker run --rm --network none \
+            --mount type=bind,src="$GITHUB_WORKSPACE",dst=/workspace,readonly \
+            --env PYTHONDONTWRITEBYTECODE=1 \
+            eebus-arena/dev:local python3 -m unittest discover -s scripts/tests
+  adapter:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14.8'
+      - run: python3 scripts/arena.py prepare
+      - run: >-
+          docker run --rm
+          --mount type=bind,src="$GITHUB_WORKSPACE",dst=/workspace,readonly
+          --workdir /workspace/.arena/generated/enbility/adapter
+          --env GOTOOLCHAIN=local
+          golang:1.27.1-bookworm@sha256:a4f46dc39c6b0359a3e1ed86ef14d01b374cc808649679dd5fca2290e6d54202
+          sh -c 'go test -mod=readonly -race ./... && go vet -mod=readonly ./...'
+      - run: python3 scripts/dev.py build
+      - run: python3 scripts/dev.py native
+      - run: python3 scripts/arena.py --lock recipes/variants/openeebus-pairing.json prepare
+      - run: >-
+          docker run --rm
+          --mount type=bind,src="$GITHUB_WORKSPACE",dst=/workspace,readonly
+          eebus-arena/dev:local python3 scripts/check_native.py --only c

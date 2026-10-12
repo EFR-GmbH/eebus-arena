@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "definition": {
+    "schemaVersion": 1,
+    "name": "Pause and resume clients",
+    "scenario": "custom",
+    "seed": 42,
+    "timeScale": 1,
+    "groups": [
+      {"id": "eg", "variant": "REPLACE_WITH_INSTALLED_EG_VARIANT", "role": "EG", "count": 1},
+      {"id": "cs", "variant": "REPLACE_WITH_INSTALLED_CS_VARIANT", "role": "CS", "count": 2}
+    ],
+    "steps": [
+      {"name": "Pause clients", "target": "cs", "action": "lifecycle", "command": "pause"},
+      {"name": "Hold fault", "action": "wait", "seconds": 5},
+      {"name": "Resume clients", "target": "cs", "action": "lifecycle", "command": "resume"},
+      {"name": "Confirm snapshot", "target": "cs", "action": "command", "command": "snapshot"}
+    ]
+  }
+}

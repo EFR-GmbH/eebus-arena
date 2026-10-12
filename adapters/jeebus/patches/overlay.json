@@ -1,0 +1,8 @@
+{
+  "upstream/build.gradle": "66894f45fcbaebba52baeb9c2edf73c75c17200b0ff9bb14dbc549c0b0cf4dad",
+  "upstream/projects/abstract-controllablesystem/src/main/java/org/openmuc/jeebus/usecase/powerlimitation/controllablesystem/RuntimeListener.java": "abe59c386e68ec4f3e9241d1234390ee970f849e2e7886aa673aca5031d40928",
+  "upstream/projects/abstract-controllablesystem/src/main/java/org/openmuc/jeebus/usecase/powerlimitation/controllablesystem/states/StateMachine.java": "74d83323ed45d07dbe419d96f931176d76c388cb70706553a257515e32375b48",
+  "upstream/projects/demo/build.gradle": "8635cee54a2fb89060d45e242c4d760bd53eb58c9ccd504896632e24168add70",
+  "upstream/projects/demo/src/main/java/org/openmuc/jeebus/shipspine/ShipCommunication.java": "83d1afb3023d76bc061f694344527a4c97ec4c9886acb9b3bc77669a0c0bb035",
+  "upstream/projects/demo/src/main/java/org/openmuc/jeebus/spine/utils/features/devicediagnosis/HeartbeatDataFunction.java": "e6f81dc3ab275abfa4e4946e28e60d28dd8b851205fcf2476ca651e2f96d0d82"
+}

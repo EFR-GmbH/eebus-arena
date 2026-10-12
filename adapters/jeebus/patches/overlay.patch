@@ -1,0 +1,327 @@
+Arena control and observation hooks for the pinned jEEBUS sources.
+
+WHY: heartbeat generation, missing-heartbeat detection, and failsafe timers need
+one time scale. Observation errors must not escape into native state transitions.
+Gradle locking and verification preserve dependency identity; compiler debug
+settings retain source/line stack traces without local-variable debug tables.
+
+--- a/upstream/build.gradle
++++ b/upstream/build.gradle
+@@ -135,3 +135,12 @@
+         testLogging.showStandardStreams = true
+     }
+ }
++
++allprojects {
++    dependencyLocking { lockAllConfigurations() }
++    tasks.withType(JavaCompile).configureEach {
++        // Keep useful stack traces; omit local-variable debug tables.
++        options.debug = true
++        options.debugOptions.debugLevel = 'source,lines'
++    }
++}
+--- a/upstream/projects/abstract-controllablesystem/src/main/java/org/openmuc/jeebus/usecase/powerlimitation/controllablesystem/RuntimeListener.java
++++ b/upstream/projects/abstract-controllablesystem/src/main/java/org/openmuc/jeebus/usecase/powerlimitation/controllablesystem/RuntimeListener.java
+@@ -10,6 +10,8 @@
+ 
+ package org.openmuc.jeebus.usecase.powerlimitation.controllablesystem;
+ 
++import java.util.ArrayList;
++import java.util.List;
+ import org.openmuc.jeebus.spine.api.DataUpdateType;
+ import org.openmuc.jeebus.spine.api.RequestResult;
+ import org.openmuc.jeebus.spine.spi.SpineSubscription;
+@@ -18,9 +20,6 @@
+ import org.openmuc.jeebus.spine.xsd.v1.DeviceDiagnosisHeartbeatDataType;
+ import org.openmuc.jeebus.spine.xsd.v1.LoadControlLimitDataType;
+ import org.openmuc.jeebus.usecase.powerlimitation.controllablesystem.states.StateMachine;
+-
+-import java.util.ArrayList;
+-import java.util.List;
+ 
+ public class RuntimeListener implements FailsafeListener, SpineSubscription {
+     private final StateMachine stateMachine;
+@@ -69,6 +68,25 @@
+     ) {
+         if (loadControlLimit.getLimitId().equals(update.getLimitId())) {
+             stateMachine.updateLimit(loadControlLimit);
++      try {
++        var arenaData = loadControlLimit.getDataCopy();
++        var arenaDescription = loadControlLimit.getDescriptionCopy();
++        if (arenaData != null && arenaData.getValue() != null && arenaDescription != null) {
++          org.openmuc.jeebus.shipspine.ArenaObserver.emit(
++              "usecase.limit",
++              org.openmuc.jeebus.shipspine.ArenaObserver.data(
++                  "usecase",
++                  "produce".equals(arenaDescription.getLimitDirection()) ? "lpp" : "lpc",
++                  "value",
++                  new org.openmuc.jeebus.spine.utils.datatypes.ScaledNumberWrapper(
++                          arenaData.getValue())
++                      .toDouble(),
++                  "active",
++                  Boolean.TRUE.equals(arenaData.getIsLimitActive())));
++        }
++      } catch (RuntimeException arenaError) {
++        System.err.println("Arena limit observation failed: " + arenaError);
++      }
+         }
+     }
+ 
+--- a/upstream/projects/abstract-controllablesystem/src/main/java/org/openmuc/jeebus/usecase/powerlimitation/controllablesystem/states/StateMachine.java
++++ b/upstream/projects/abstract-controllablesystem/src/main/java/org/openmuc/jeebus/usecase/powerlimitation/controllablesystem/states/StateMachine.java
+@@ -10,6 +10,18 @@
+ 
+ package org.openmuc.jeebus.usecase.powerlimitation.controllablesystem.states;
+ 
++import static java.util.concurrent.TimeUnit.*;
++import static org.openmuc.jeebus.usecase.powerlimitation.controllablesystem.states.Event.*;
++import static org.openmuc.jeebus.usecase.powerlimitation.controllablesystem.states.State.FAILSAFE;
++import static org.openmuc.jeebus.usecase.powerlimitation.controllablesystem.states.State.INIT;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Objects;
++import java.util.concurrent.Executors;
++import java.util.concurrent.ScheduledExecutorService;
++import java.util.concurrent.ScheduledFuture;
++import javax.xml.datatype.Duration;
+ import org.openmuc.jeebus.spine.api.RequestResult;
+ import org.openmuc.jeebus.spine.utils.SpineUtilities;
+ import org.openmuc.jeebus.spine.utils.features.deviceconfiguration.KeyValue;
+@@ -17,19 +29,6 @@
+ import org.openmuc.jeebus.usecase.powerlimitation.controllablesystem.LoadControlLimit;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+-
+-import javax.xml.datatype.Duration;
+-import java.util.ArrayList;
+-import java.util.List;
+-import java.util.Objects;
+-import java.util.concurrent.Executors;
+-import java.util.concurrent.ScheduledExecutorService;
+-import java.util.concurrent.ScheduledFuture;
+-
+-import static java.util.concurrent.TimeUnit.*;
+-import static org.openmuc.jeebus.usecase.powerlimitation.controllablesystem.states.Event.*;
+-import static org.openmuc.jeebus.usecase.powerlimitation.controllablesystem.states.State.FAILSAFE;
+-import static org.openmuc.jeebus.usecase.powerlimitation.controllablesystem.states.State.INIT;
+ 
+ public class StateMachine {
+     private final Logger LOGGER = LoggerFactory.getLogger(this.getClass());
+@@ -104,30 +103,28 @@
+     }
+ 
+     private ScheduledFuture<?> scheduleInitTimeout() {
+-        return executor.schedule(
+-            () -> transitionToNextState(INIT_TIMEOUT),
+-            2,
+-            MINUTES
+-        );
++    return executor.schedule(
++        () -> transitionToNextState(INIT_TIMEOUT),
++        120000 / Integer.getInteger("arena.timeScale", 1),
++        MILLISECONDS);
+     }
+ 
+     private ScheduledFuture<?> scheduleHeartbeatTimeout() {
+-        return executor.schedule(
+-            () -> transitionToNextState(HEARTBEAT_TIMEOUT),
+-            2,
+-            MINUTES
+-        );
++    return executor.schedule(
++        () -> transitionToNextState(HEARTBEAT_TIMEOUT),
++        120000 / Integer.getInteger("arena.timeScale", 1),
++        MILLISECONDS);
+     }
+ 
+     private void scheduleFailsafeExpiration() {
+-        executor.schedule(
+-            () -> {
+-                transitionToNextState(FAILSAFE_TIMEOUT);
+-                LOGGER.info("failsafe duration expired");
+-            },
+-            SpineUtilities.durationToRelativeMilliseconds(failsafeDuration.toString()),
+-            MILLISECONDS
+-        );
++    executor.schedule(
++        () -> {
++          transitionToNextState(FAILSAFE_TIMEOUT);
++          LOGGER.info("failsafe duration expired");
++        },
++        SpineUtilities.durationToRelativeMilliseconds(failsafeDuration.toString())
++            / Integer.getInteger("arena.timeScale", 1),
++        MILLISECONDS);
+     }
+ 
+     public boolean wasHeartbeatReceived() {
+--- a/upstream/projects/demo/build.gradle
++++ b/upstream/projects/demo/build.gradle
+@@ -25,3 +25,5 @@
+ application {
+     mainClass = 'org.openmuc.jeebus.usecase.powerlimitation.controllablesystem.demo.Main'
+ }
++
++dependencies { implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.2' }
+--- a/upstream/projects/demo/src/main/java/org/openmuc/jeebus/shipspine/ShipCommunication.java
++++ b/upstream/projects/demo/src/main/java/org/openmuc/jeebus/shipspine/ShipCommunication.java
+@@ -10,9 +10,23 @@
+ 
+ package org.openmuc.jeebus.shipspine;
+ 
++import static org.openmuc.jeebus.ship.api.DisconnectReason.ERROR;
++import static org.openmuc.jeebus.ship.util.ShipUtilities.beautify;
++import static org.openmuc.jeebus.ship.util.ShipUtilities.safelyParseSocketAddress;
++import static org.openmuc.jeebus.shipspine.ShipCommunication.ConnectClientsTo.ALL;
++import static org.openmuc.jeebus.shipspine.ShipCommunication.ConnectClientsTo.TRUSTED;
++
++import java.io.IOException;
++import java.net.Inet4Address;
++import java.net.InetSocketAddress;
++import java.util.*;
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.ConcurrentSkipListMap;
++import java.util.concurrent.ConcurrentSkipListSet;
++import java.util.concurrent.ExecutionException;
++import java.util.function.Function;
+ import org.openmuc.jeebus.ship.api.*;
+ import org.openmuc.jeebus.ship.node.ShipConfig;
+-import org.openmuc.jeebus.ship.util.ShipUtilities;
+ import org.openmuc.jeebus.spine.impl.parser.MessageParser;
+ import org.openmuc.jeebus.spine.spi.Communication;
+ import org.openmuc.jeebus.spine.spi.SpineConnection;
+@@ -23,22 +37,6 @@
+ import org.openmuc.jeebus.spine.xsd.v1.HeaderType;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+-
+-import java.io.IOException;
+-import java.net.Inet4Address;
+-import java.net.InetSocketAddress;
+-import java.util.*;
+-import java.util.concurrent.CompletableFuture;
+-import java.util.concurrent.ConcurrentSkipListMap;
+-import java.util.concurrent.ConcurrentSkipListSet;
+-import java.util.concurrent.ExecutionException;
+-import java.util.function.Function;
+-
+-import static org.openmuc.jeebus.ship.api.DisconnectReason.ERROR;
+-import static org.openmuc.jeebus.ship.util.ShipUtilities.beautify;
+-import static org.openmuc.jeebus.ship.util.ShipUtilities.safelyParseSocketAddress;
+-import static org.openmuc.jeebus.shipspine.ShipCommunication.ConnectClientsTo.ALL;
+-import static org.openmuc.jeebus.shipspine.ShipCommunication.ConnectClientsTo.TRUSTED;
+ 
+ public class ShipCommunication extends Communication {
+     /**
+@@ -256,6 +254,18 @@
+             );
+ 
+             if (datagram != null) {
++        ArenaObserver.emit(
++            "ship.state",
++            ArenaObserver.data("ski", shipConnection.getRemoteSki(), "state", "connected"));
++        ArenaObserver.emit(
++            "spine.message",
++            ArenaObserver.data(
++                "ski",
++                shipConnection.getRemoteSki(),
++                "classifier",
++                String.valueOf(datagram.getHeader().getCmdClassifier()),
++                "messageCounter",
++                String.valueOf(datagram.getHeader().getMsgCounter())));
+                 ShipCommunication.super.onMessageReceived(
+                     new ShipSpineConnection(shipConnection),
+                     datagram
+@@ -275,6 +285,10 @@
+                 );
+             }
+ 
++      ArenaObserver.emit(
++          "ship.state",
++          ArenaObserver.data(
++              "ski", shipConnectionInterface.getRemoteSki(), "state", "disconnected"));
+             removeDevice(shipConnectionInterface.getRemoteId());
+         }
+ 
+--- a/upstream/projects/demo/src/main/java/org/openmuc/jeebus/spine/utils/features/devicediagnosis/HeartbeatDataFunction.java
++++ b/upstream/projects/demo/src/main/java/org/openmuc/jeebus/spine/utils/features/devicediagnosis/HeartbeatDataFunction.java
+@@ -10,6 +10,16 @@
+ 
+ package org.openmuc.jeebus.spine.utils.features.devicediagnosis;
+ 
++import static org.openmuc.jeebus.spine.utils.SpineUtilities.getNowTimestamp;
++
++import java.math.BigDecimal;
++import java.math.BigInteger;
++import java.util.concurrent.Executors;
++import java.util.concurrent.ScheduledExecutorService;
++import java.util.concurrent.ScheduledFuture;
++import java.util.concurrent.TimeUnit;
++import javax.xml.datatype.DatatypeFactory;
++import javax.xml.datatype.Duration;
+ import org.openmuc.jeebus.spine.api.SpineAcknowledgment;
+ import org.openmuc.jeebus.spine.spi.function.FeatureFunction;
+ import org.openmuc.jeebus.spine.spi.function.StandardFunctionType;
+@@ -17,17 +27,6 @@
+ import org.openmuc.jeebus.spine.xsd.v1.*;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+-
+-import javax.xml.datatype.DatatypeFactory;
+-import javax.xml.datatype.Duration;
+-import java.math.BigDecimal;
+-import java.math.BigInteger;
+-import java.util.concurrent.Executors;
+-import java.util.concurrent.ScheduledExecutorService;
+-import java.util.concurrent.ScheduledFuture;
+-import java.util.concurrent.TimeUnit;
+-
+-import static org.openmuc.jeebus.spine.utils.SpineUtilities.getNowTimestamp;
+ 
+ @StandardFunctionType(
+         type = FunctionEnumType.DEVICE_DIAGNOSIS_HEARTBEAT_DATA,
+@@ -42,6 +41,7 @@
+         = Executors.newSingleThreadScheduledExecutor(namedThreadFactory);
+     private Duration timeout;
+     private long timeoutSeconds;
++  private volatile boolean arenaEnabled = true;
+     private BigInteger heartbeatCounter = BigInteger.ZERO;
+     private ScheduledFuture<?> currentFuture;
+ 
+@@ -86,11 +86,11 @@
+ 
+     private void resetHeartbeat() {
+         if (currentFuture != null && !currentFuture.isDone()) currentFuture.cancel(false);
+-        currentFuture = executorService.schedule(
+-                this::increaseCounterAndNotifySubscribers,
+-                timeoutSeconds,
+-                TimeUnit.SECONDS
+-        );
++    currentFuture =
++        executorService.schedule(
++            this::increaseCounterAndNotifySubscribers,
++            Math.max(1, timeoutSeconds / Integer.getInteger("arena.timeScale", 1)),
++            TimeUnit.SECONDS);
+     }
+ 
+     public void increaseCounterAndNotifySubscribers() {
+@@ -99,7 +99,7 @@
+     }
+ 
+     public void sendHeartbeat() {
+-        if (feature != null) {
++    if (feature != null && arenaEnabled) {
+             heartbeatCounter = heartbeatCounter.add(BigInteger.ONE);
+             feature.notifySubscribers(
+                 FunctionEnumType.DEVICE_DIAGNOSIS_HEARTBEAT_DATA,
+@@ -139,6 +139,10 @@
+         shutdownExecutor();
+     }
+ 
++  public void arenaSetEnabled(boolean enabled) {
++    arenaEnabled = enabled;
++  }
++
+     public void setTimeoutSeconds(long timeoutSeconds) {
+         this.timeoutSeconds = timeoutSeconds;
+         timeout = DatatypeFactory
