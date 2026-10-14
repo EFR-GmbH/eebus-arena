@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import "./analysis.css";
+import { nodeOptionLabel } from "./labels";
 
 type Point = {
   at: string;
@@ -38,6 +39,8 @@ type History = {
 };
 type AnalysisNode = {
   id: string;
+  stack?: string;
+  role?: string;
   resources?: Record<string, number>;
   effectiveResources?: Record<string, any>;
   processMetrics?: {
@@ -330,7 +333,9 @@ export function ResourcePanel({
             <select value={node} onChange={(e) => setNode(e.target.value)}>
               <option value="">All nodes · container totals</option>
               {run.nodes.map((n) => (
-                <option key={n.id}>{n.id}</option>
+                <option key={n.id} value={n.id}>
+                  {nodeOptionLabel(n)}
+                </option>
               ))}
             </select>
           </label>
@@ -634,7 +639,9 @@ export function FaultPanel({ run }: { run: AnalysisRun }) {
           From
           <select value={from} onChange={(e) => setFrom(e.target.value)}>
             {run.nodes.map((n) => (
-              <option key={n.id}>{n.id}</option>
+              <option key={n.id} value={n.id}>
+                {nodeOptionLabel(n)}
+              </option>
             ))}
           </select>
         </label>
@@ -642,7 +649,9 @@ export function FaultPanel({ run }: { run: AnalysisRun }) {
           To
           <select value={to} onChange={(e) => setTo(e.target.value)}>
             {run.nodes.map((n) => (
-              <option key={n.id}>{n.id}</option>
+              <option key={n.id} value={n.id}>
+                {nodeOptionLabel(n)}
+              </option>
             ))}
           </select>
         </label>
@@ -831,15 +840,17 @@ export function TimelinePanel({
             <select value={prefix} onChange={(e) => setPrefix(e.target.value)}>
               <option value="">All events</option>
               {[
-                "pairing.",
-                "ship.",
-                "mdns.",
-                "resource.",
-                "campaign.",
-                "fault.",
-                "usecase.",
-              ].map((p) => (
-                <option key={p}>{p}</option>
+                ["pairing.", "Pairing"],
+                ["ship.", "SHIP connections"],
+                ["mdns.", "mDNS discovery and traffic"],
+                ["resource.", "Resources"],
+                ["campaign.", "Campaign"],
+                ["fault.", "Faults"],
+                ["usecase.", "Use cases"],
+              ].map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
               ))}
             </select>
           </label>
@@ -848,7 +859,9 @@ export function TimelinePanel({
             <select value={node} onChange={(e) => setNode(e.target.value)}>
               <option value="">All nodes</option>
               {run.nodes.map((n) => (
-                <option key={n.id}>{n.id}</option>
+                <option key={n.id} value={n.id}>
+                  {nodeOptionLabel(n)}
+                </option>
               ))}
             </select>
           </label>

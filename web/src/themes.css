@@ -83,8 +83,6 @@ h1 {
 }
 nav {
   color: var(--nav-ink);
-  min-height: calc(100vh - 64px);
-  border-right-color: var(--metal);
 }
 nav button:not(.run-link):not(.danger):not(.primary):not(:disabled) {
   color: var(--ink);

@@ -3,6 +3,14 @@ import { createRoot } from "react-dom/client";
 import "./style.css";
 import "./themes.css";
 import { MonitoringPanel } from "./monitoring";
+import { InspectorLayout } from "./InspectorLayout";
+import {
+  stackLabels,
+  roleLabels,
+  nodeOptionLabel,
+  variantOptionLabels,
+  capturedPacketLabel,
+} from "./labels";
 import {
   ResourcePanel,
   TimelinePanel,
@@ -18,6 +26,8 @@ type Variant = {
   roles: string[];
   image: string;
   provenance: {
+    sources?: Record<string, { repository: string; commit: string }>;
+    recipeHash?: string;
     arenaFeatures?: { monitoringProviders?: string[]; networkModes?: string[] };
   };
 };
@@ -170,12 +180,6 @@ type State = {
   cursor: number;
 };
 const empty: State = { runs: {}, variants: {}, cursor: 0 };
-const stackLabels: Record<string, string> = {
-  enbility: "enbility",
-  openeebus: "OpenEEBUS",
-  jeebus: "jEEBUS",
-  "mdns-stresser": "mDNS stresser",
-};
 
 function StackCue({ stack }: { stack: string }) {
   return (
@@ -185,6 +189,20 @@ function StackCue({ stack }: { stack: string }) {
       aria-hidden="true"
     >
       <circle className="node-shape" r={12} />
+    </svg>
+  );
+}
+
+function ConnectionCue({ connected }: { connected: boolean }) {
+  return (
+    <svg className="connection-cue" viewBox="0 0 32 12" aria-hidden="true">
+      <line
+        x1="0"
+        y1="6"
+        x2="32"
+        y2="6"
+        className={"trust-link " + (connected ? "connected" : "intended")}
+      />
     </svg>
   );
 }
@@ -278,6 +296,20 @@ function App() {
     [sort, setSort] = useState("id"),
     [creating, setCreating] = useState(true);
   const [managing, setManaging] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("arena-nav-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("arena-nav-collapsed", String(navCollapsed));
+    } catch {
+      // Navigation remains usable when browser storage is unavailable.
+    }
+  }, [navCollapsed]);
   const [editing, setEditing] = useState<{
     id: string;
     revision: number;
@@ -384,15 +416,23 @@ function App() {
       ),
     [state.runs],
   );
+  const variantLabels = useMemo(
+    () => variantOptionLabels(variants),
+    [variants],
+  );
+  const variantStacks = useMemo(
+    () => [...new Set(variants.map((v) => v.stack))],
+    [variants],
+  );
   const variantSearch = useMemo(
     () =>
       new Map(
         variants.map((v) => [
           v.id,
-          `${v.id} ${v.label} ${JSON.stringify(v.provenance)}`.toLowerCase(),
+          `${variantLabels.get(v.id)} ${v.id} ${v.label} ${JSON.stringify(v.provenance)}`.toLowerCase(),
         ]),
       ),
-    [variants],
+    [variants, variantLabels],
   );
   const matchingVariants = useMemo(
     () =>
@@ -804,149 +844,178 @@ function App() {
           </button>
         </div>
       </header>
-      <div className="workspace">
-        <nav aria-label="Saved arenas">
-          <div className="arena-list-heading">
-            <h2>Arenas</h2>
-            {runs.length > 0 && (
-              <button
-                disabled={busy}
-                aria-pressed={managing}
-                onClick={() => {
-                  setManaging(!managing);
-                  setDropSelection([]);
-                }}
-              >
-                {managing ? "Done" : "Select"}
-              </button>
-            )}
-          </div>
-          {managing && (
-            <div className="arena-list-tools">
-              <label className="arena-select-all">
-                <input
-                  type="checkbox"
-                  disabled={busy || !runs.some(canDrop)}
-                  checked={
-                    runs.some(canDrop) &&
-                    runs
-                      .filter(canDrop)
-                      .every((r) => dropSelection.includes(r.id))
-                  }
-                  onChange={(e) =>
-                    setDropSelection(
-                      e.target.checked
-                        ? runs.filter(canDrop).map((r) => r.id)
-                        : [],
-                    )
-                  }
-                />
-                Select all inactive
-              </label>
-              <button
-                className="danger"
-                disabled={
-                  busy ||
-                  !dropSelection.length ||
-                  dropSelection.some(
-                    (id) => !state.runs[id] || !canDrop(state.runs[id]),
-                  )
-                }
-                onClick={() => dropRuns(dropSelection)}
-              >
-                Drop selected ({dropSelection.length})
-              </button>
-              <p className="muted">Stop running arenas before dropping them.</p>
-            </div>
-          )}
-          {lastDropped.length > 0 && (
-            <button className="undo-drop" disabled={busy} onClick={undoDrop}>
-              Undo drop ({lastDropped.length})
+      <div className={"workspace" + (navCollapsed ? " nav-collapsed" : "")}>
+        <aside className="arena-sidebar">
+          <nav aria-label="Saved arenas">
+            <button
+              className="sidebar-toggle"
+              aria-label={
+                navCollapsed ? "Expand navigation" : "Collapse navigation"
+              }
+              aria-expanded={!navCollapsed}
+              aria-controls="saved-arena-list"
+              title={navCollapsed ? "Expand navigation" : "Collapse navigation"}
+              onClick={() => setNavCollapsed((collapsed) => !collapsed)}
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d={navCollapsed ? "M7 5l5 5-5 5" : "M12 5l-5 5 5 5"} />
+              </svg>
+              {!navCollapsed && <span>Collapse</span>}
             </button>
-          )}
-          {runs.length === 0 ? (
-            <p className="muted">Your experiments will appear here.</p>
-          ) : (
-            runs.map((r) => (
-              <div className="arena-list-row" key={r.id}>
-                {managing && (
-                  <input
-                    type="checkbox"
-                    aria-label={`Select ${r.definition.name} · ${r.id.slice(-6)}`}
-                    disabled={busy || !canDrop(r)}
-                    title={
-                      canDrop(r)
-                        ? "Select arena to drop"
-                        : "Stop this arena first"
-                    }
-                    checked={dropSelection.includes(r.id)}
-                    onChange={(e) =>
-                      setDropSelection((old) =>
-                        e.target.checked
-                          ? [...old, r.id]
-                          : old.filter((id) => id !== r.id),
+            <div
+              className="arena-nav-content"
+              id="saved-arena-list"
+              hidden={navCollapsed}
+            >
+              <div className="arena-list-heading">
+                <h2>Arenas</h2>
+                {runs.length > 0 && (
+                  <button
+                    disabled={busy}
+                    aria-pressed={managing}
+                    onClick={() => {
+                      setManaging(!managing);
+                      setDropSelection([]);
+                    }}
+                  >
+                    {managing ? "Done" : "Select"}
+                  </button>
+                )}
+              </div>
+              {managing && (
+                <div className="arena-list-tools">
+                  <label className="arena-select-all">
+                    <input
+                      type="checkbox"
+                      disabled={busy || !runs.some(canDrop)}
+                      checked={
+                        runs.some(canDrop) &&
+                        runs
+                          .filter(canDrop)
+                          .every((r) => dropSelection.includes(r.id))
+                      }
+                      onChange={(e) =>
+                        setDropSelection(
+                          e.target.checked
+                            ? runs.filter(canDrop).map((r) => r.id)
+                            : [],
+                        )
+                      }
+                    />
+                    Select all inactive
+                  </label>
+                  <button
+                    className="danger"
+                    disabled={
+                      busy ||
+                      !dropSelection.length ||
+                      dropSelection.some(
+                        (id) => !state.runs[id] || !canDrop(state.runs[id]),
                       )
                     }
-                  />
-                )}
+                    onClick={() => dropRuns(dropSelection)}
+                  >
+                    Drop selected ({dropSelection.length})
+                  </button>
+                  <p className="muted">
+                    Stop running arenas before dropping them.
+                  </p>
+                </div>
+              )}
+              {lastDropped.length > 0 && (
                 <button
+                  className="undo-drop"
                   disabled={busy}
-                  className={
-                    "run-link " +
-                    (runId === r.id && !creating ? "selected" : "")
-                  }
-                  onClick={() => {
-                    setEditing(null);
-                    setJsonErrors({});
-                    setRunId(r.id);
-                    setNodeId("");
-                    setCreating(false);
-                  }}
+                  onClick={undoDrop}
                 >
-                  <strong>{r.definition.name}</strong>
-                  <span>
-                    {r.nodes.length} nodes · {r.status} · {r.id.slice(-6)}
-                  </span>
+                  Undo drop ({lastDropped.length})
                 </button>
-              </div>
-            ))
-          )}
-          <input
-            ref={file}
-            type="file"
-            accept="application/json,.json,application/gzip,.tar.gz,.tgz"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f)
-                act(async () => {
-                  let result;
-                  if (/\.(tar\.gz|tgz)$/i.test(f.name)) {
-                    const response = await fetch("/api/v1/evidence", {
-                      method: "POST",
-                      body: f,
-                      headers: { "Content-Type": "application/gzip" },
+              )}
+              {runs.length === 0 ? (
+                <p className="muted">Your experiments will appear here.</p>
+              ) : (
+                runs.map((r) => (
+                  <div className="arena-list-row" key={r.id}>
+                    {managing && (
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${r.definition.name} · ${r.id.slice(-6)}`}
+                        disabled={busy || !canDrop(r)}
+                        title={
+                          canDrop(r)
+                            ? "Select arena to drop"
+                            : "Stop this arena first"
+                        }
+                        checked={dropSelection.includes(r.id)}
+                        onChange={(e) =>
+                          setDropSelection((old) =>
+                            e.target.checked
+                              ? [...old, r.id]
+                              : old.filter((id) => id !== r.id),
+                          )
+                        }
+                      />
+                    )}
+                    <button
+                      disabled={busy}
+                      className={
+                        "run-link " +
+                        (runId === r.id && !creating ? "selected" : "")
+                      }
+                      onClick={() => {
+                        setEditing(null);
+                        setJsonErrors({});
+                        setRunId(r.id);
+                        setNodeId("");
+                        setCreating(false);
+                      }}
+                    >
+                      <strong>{r.definition.name}</strong>
+                      <span>
+                        {r.nodes.length} nodes · {r.status} · {r.id.slice(-6)}
+                      </span>
+                    </button>
+                  </div>
+                ))
+              )}
+              <input
+                ref={file}
+                type="file"
+                accept="application/json,.json,application/gzip,.tar.gz,.tgz"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f)
+                    act(async () => {
+                      let result;
+                      if (/\.(tar\.gz|tgz)$/i.test(f.name)) {
+                        const response = await fetch("/api/v1/evidence", {
+                          method: "POST",
+                          body: f,
+                          headers: { "Content-Type": "application/gzip" },
+                        });
+                        result = await response.json();
+                        if (!response.ok)
+                          throw Error(result.error ?? response.statusText);
+                      } else {
+                        const bundle = JSON.parse(await f.text());
+                        result = await api("/runs", bundle);
+                      }
+                      setRunId(result.id);
+                      setCreating(false);
                     });
-                    result = await response.json();
-                    if (!response.ok)
-                      throw Error(result.error ?? response.statusText);
-                  } else {
-                    const bundle = JSON.parse(await f.text());
-                    result = await api("/runs", bundle);
-                  }
-                  setRunId(result.id);
-                  setCreating(false);
-                });
-              e.target.value = "";
-            }}
-          />
-          <button
-            disabled={busy}
-            onClick={() => act(() => api("/variants/reload", {}))}
-          >
-            Reload variants
-          </button>
-        </nav>
+                  e.target.value = "";
+                }}
+              />
+              <button
+                disabled={busy}
+                onClick={() => act(() => api("/variants/reload", {}))}
+              >
+                Reload variants
+              </button>
+            </div>
+          </nav>
+        </aside>
         <main>
           {error && (
             <div role="alert" className="error">
@@ -1154,7 +1223,14 @@ function App() {
                               supportsMonitoring(n.group.variant, "mgcp"),
                           )
                           .map((n) => (
-                            <option key={n.id}>{n.id}</option>
+                            <option key={n.id} value={n.id}>
+                              {nodeOptionLabel({
+                                id: n.id,
+                                stack: state.variants[n.group.variant]?.stack,
+                                role: n.group.role,
+                                external: n.group.external,
+                              })}
+                            </option>
                           ))}
                       </select>
                     </label>
@@ -1281,18 +1357,22 @@ function App() {
                     Find a revision
                     <input
                       list="stack-revisions"
-                      placeholder="Stack, recipe or commit"
+                      placeholder="Implementation, build date or commit"
                       value={variantFilter}
                       onChange={(e) => setVariantFilter(e.target.value)}
                     />
                     <datalist id="stack-revisions">
                       {variants.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.label}
-                        </option>
+                        <option key={v.id} value={variantLabels.get(v.id)} />
                       ))}
                     </datalist>
                   </label>
+                  {variantFilter && matchingVariants.size === 0 && (
+                    <p role="status">
+                      No builds match. Clear the search to see all
+                      implementations.
+                    </p>
+                  )}
                   <div className="groups">
                     {draft.groups.map((g, i) => (
                       <div className="group" key={i}>
@@ -1323,17 +1403,35 @@ function App() {
                               });
                             }}
                           >
-                            {variants
-                              .filter(
+                            {!state.variants[g.variant] && (
+                              <option value={g.variant}>
+                                Build unavailable (current selection)
+                              </option>
+                            )}
+                            {variantStacks.map((stack) => {
+                              const choices = variants.filter(
                                 (v) =>
-                                  v.id === g.variant ||
-                                  matchingVariants.has(v.id),
-                              )
-                              .map((v) => (
-                                <option value={v.id} key={v.id}>
-                                  {v.label}
-                                </option>
-                              ))}
+                                  v.stack === stack &&
+                                  (v.id === g.variant ||
+                                    matchingVariants.has(v.id)),
+                              );
+                              return choices.length > 0 ? (
+                                <optgroup
+                                  key={stack}
+                                  label={stackLabels[stack] ?? stack}
+                                >
+                                  {choices.map((v) => (
+                                    <option
+                                      value={v.id}
+                                      key={v.id}
+                                      title={v.label}
+                                    >
+                                      {variantLabels.get(v.id)}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ) : null;
+                            })}
                           </select>
                         </label>
                         <label>
@@ -1345,7 +1443,9 @@ function App() {
                             }
                           >
                             {state.variants[g.variant]?.roles.map((role) => (
-                              <option key={role}>{role}</option>
+                              <option key={role} value={role}>
+                                {roleLabels[role] ?? role}
+                              </option>
                             ))}
                           </select>
                         </label>
@@ -1391,6 +1491,26 @@ function App() {
                         >
                           Remove
                         </button>
+                        <details className="revision-details">
+                          <summary>Build details</summary>
+                          <pre>
+                            {JSON.stringify(
+                              {
+                                variant: g.variant,
+                                label: state.variants[g.variant]?.label,
+                                builtAt: state.variants[g.variant]?.builtAt,
+                                sources:
+                                  state.variants[g.variant]?.provenance.sources,
+                                recipeHash:
+                                  state.variants[g.variant]?.provenance
+                                    .recipeHash,
+                                image: state.variants[g.variant]?.image,
+                              },
+                              null,
+                              2,
+                            )}
+                          </pre>
+                        </details>
                         <details className="resource-editor">
                           <summary>CPU and process limits</summary>
                           <div className="resource-fields">
@@ -1986,9 +2106,7 @@ function App() {
                 )}
               </div>
               {tab === "nodes" ? (
-                <div
-                  className={"arena-layout " + (node ? "has-inspector" : "")}
-                >
+                <InspectorLayout hasInspector={!!node}>
                   <section>
                     <div className="toolbar">
                       <div className="switch">
@@ -2030,12 +2148,29 @@ function App() {
                       <p role="status">No nodes match this filter.</p>
                     )}
                     {view === "map" ? (
-                      <NodeMap
-                        nodes={run.nodes}
-                        visible={filtered.map((n) => n.id)}
-                        selected={nodeId}
-                        select={setNodeId}
-                      />
+                      <>
+                        <NodeMap
+                          nodes={run.nodes}
+                          visible={filtered.map((n) => n.id)}
+                          selected={nodeId}
+                          select={setNodeId}
+                        />
+                        <div
+                          className="legend"
+                          aria-label="Topology connections"
+                        >
+                          <strong>Connections</strong>
+                          <span>
+                            <ConnectionCue connected />
+                            Solid: SHIP connection reported
+                          </span>
+                          <span>
+                            <ConnectionCue connected={false} />
+                            Dashed: intended or trusted peer; no SHIP connection
+                            reported
+                          </span>
+                        </div>
+                      </>
                     ) : (
                       <div className="table-scroll">
                         <table>
@@ -2107,7 +2242,7 @@ function App() {
                     </div>
                   </section>
                   {node && (
-                    <aside className="inspector">
+                    <aside className="inspector" id="node-inspector">
                       <div className="inspector-title">
                         <h2>{node.id}</h2>
                         <button
@@ -2117,13 +2252,23 @@ function App() {
                           Close
                         </button>
                       </div>
+                      <p
+                        className="inspector-status"
+                        role="status"
+                        aria-label="Node status"
+                      >
+                        Status: <strong>{node.lifecycle}</strong>
+                      </p>
                       <p>
                         <span className="stack-name">
                           <StackCue stack={node.stack} />
-                          {stackLabels[node.stack] ?? node.stack} · {node.role}{" "}
-                          · {node.lifecycle}
+                          {stackLabels[node.stack] ?? node.stack} · {node.role}
                         </span>
                       </p>
+                      <details open>
+                        <summary>Observed state</summary>
+                        <pre>{JSON.stringify(node.snapshot, null, 2)}</pre>
+                      </details>
                       <dl>
                         <dt>CPU</dt>
                         <dd>{sampled(node, "cpuPercent", cpu)}</dd>
@@ -2140,8 +2285,9 @@ function App() {
                           {sampled(node, "blockWriteBytes", bytes)}
                         </dd>
                         <dt>Revision</dt>
-                        <dd>
-                          {state.variants[node.variant]?.label ?? node.variant}
+                        <dd className="revision-name">
+                          {variantLabels.get(node.variant) ??
+                            "Build unavailable"}
                         </dd>
                         <dt>SKI</dt>
                         <dd className="ski">{node.ski}</dd>
@@ -2199,6 +2345,12 @@ function App() {
                           node={node}
                           busy={busy}
                           command={command}
+                          captures={events.filter(
+                            (event) =>
+                              event.runId === run.id &&
+                              event.nodeId === node.id &&
+                              event.type === "mdns.capture",
+                          )}
                           initial={
                             run.definition.groups.find(
                               (g) => g.id === node.group,
@@ -2303,7 +2455,7 @@ function App() {
                                 )
                                 .map((n) => (
                                   <option key={n.id} value={n.ski}>
-                                    {n.id}
+                                    {nodeOptionLabel(n)}
                                   </option>
                                 ))}
                             </select>
@@ -2380,10 +2532,6 @@ function App() {
                         resultNode === run.id + "/" + node.id && (
                           <pre>{commandResult}</pre>
                         )}
-                      <details open>
-                        <summary>Observed state</summary>
-                        <pre>{JSON.stringify(node.snapshot, null, 2)}</pre>
-                      </details>
                       <details>
                         <summary>Protocol counters</summary>
                         <pre>
@@ -2428,7 +2576,7 @@ function App() {
                       </pre>
                     </aside>
                   )}
-                </div>
+                </InspectorLayout>
               ) : tab === "resources" ? (
                 <ResourcePanel
                   key={run.id}
@@ -2566,8 +2714,9 @@ function NodeMap({
       <desc>
         Blue identifies enbility, violet OpenEEBUS, orange jEEBUS, and teal the
         mDNS stresser. The border and LED show lifecycle. Text identifies EG,
-        CS, or DNS. Dotted links show intended peers; solid links show connected
-        peers.
+        CS, or DNS. Dashed links show intended or trusted peers without a
+        reported SHIP connection; solid links show a SHIP connection reported by
+        the CS.
       </desc>
       {clients
         .filter((n) => visible.includes(n.id))
@@ -2684,16 +2833,18 @@ function StressEditor({
           onChange={(e) => onChange({ ...value, pattern: e.target.value })}
         >
           {[
-            "advertise",
-            "query",
-            "churn",
-            "goodbye",
-            "stale",
-            "duplicate",
-            "invalid",
-            "replay",
-          ].map((p) => (
-            <option key={p}>{p}</option>
+            ["advertise", "Advertise services"],
+            ["query", "Query services"],
+            ["churn", "Service churn"],
+            ["goodbye", "Withdraw services (goodbye)"],
+            ["stale", "Stale records"],
+            ["duplicate", "Duplicate records"],
+            ["invalid", "Invalid records"],
+            ["replay", "Replay captured packet"],
+          ].map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
           ))}
         </select>
       </label>
@@ -2703,8 +2854,14 @@ function StressEditor({
           value={value.service}
           onChange={(e) => onChange({ ...value, service: e.target.value })}
         >
-          {["_ship._tcp", "_shippairing._tcp", "_http._tcp"].map((p) => (
-            <option key={p}>{p}</option>
+          {[
+            ["_ship._tcp", "SHIP (_ship._tcp)"],
+            ["_shippairing._tcp", "SHIP pairing (_shippairing._tcp)"],
+            ["_http._tcp", "HTTP (_http._tcp)"],
+          ].map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
           ))}
         </select>
       </label>
@@ -2767,14 +2924,17 @@ function StressPanel({
   busy,
   command,
   initial,
+  captures,
 }: {
   node: Node;
   busy: boolean;
   command: (name: string, params: Record<string, unknown>) => void;
   initial: StressProfile;
+  captures: Event[];
 }) {
   const [profile, setProfile] = useState(initial);
   const traffic = node.snapshot.mdns;
+  const captureById = new Map(captures.map((event) => [event.data?.id, event]));
   return (
     <section>
       <h3>mDNS traffic</h3>
@@ -2853,11 +3013,19 @@ function StressPanel({
             }
           >
             <option value="">Choose packet</option>
-            {traffic.captureIds.map((id: string) => (
-              <option key={id}>{id}</option>
+            {traffic.captureIds.map((id: string, index: number) => (
+              <option key={id} value={id} title={id}>
+                {capturedPacketLabel(index, captureById.get(id))}
+              </option>
             ))}
           </select>
         </label>
+      )}
+      {profile.replayId && (
+        <details>
+          <summary>Captured packet details</summary>
+          <pre>{profile.replayId}</pre>
+        </details>
       )}
     </section>
   );
@@ -2952,7 +3120,7 @@ function PairingPanel({
             >
               {peers.map((n) => (
                 <option key={n.id} value={n.id}>
-                  {n.id}
+                  {nodeOptionLabel(n)}
                 </option>
               ))}
             </select>
